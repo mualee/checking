@@ -1,0 +1,14 @@
+# Runs the FastAPI backend container on the EC2 host, bound to localhost:8000.
+# nginx (on the host) terminates TLS and proxies to it. See README-ec2.md.
+services:
+  api:
+    build:
+      context: ../backend
+    image: credit-audit-api
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8080"          # host 8000 -> container 8080 (uvicorn); localhost only
+    env_file:
+      - ./.env                          # create this on the server (gitignored)
+    volumes:
+      - ./service-account.json:/app/service-account.json:ro   # Firebase key (gitignored)

@@ -1,0 +1,9 @@
+[tool.pytest.ini_options]
+# `app` lives under backend/; put it on the import path so `import app...` works.
+pythonpath = ["backend"]
+testpaths = ["tests"]
+addopts = "-ra"
+asyncio_mode = "auto"
+markers = [
+    "integration: tests that require the Firebase Emulator Suite to be running",
+]

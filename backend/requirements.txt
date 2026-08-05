@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+firebase-admin
+pdfplumber
+python-docx
+pydantic
+pydantic-settings
+python-multipart
+python-dateutil
+pytest
+pytest-asyncio
+httpx
+reportlab

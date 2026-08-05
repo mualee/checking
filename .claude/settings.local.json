@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py -0p)",
+      "Bash(firebase --version)",
+      "Bash(java -version)",
+      "Bash(py -3.13 -m venv .venv)",
+      "Bash(.venv/Scripts/python.exe -m pip install --upgrade pip --quiet)",
+      "Bash(.venv/Scripts/python.exe -m pip install -r backend/requirements.txt)",
+      "Bash(.venv/Scripts/python.exe -c \"import pdfplumber, firebase_admin, docx, fastapi, reportlab, google.cloud.firestore, google.cloud.storage; print\\('all imports OK'\\); import docx; print\\('python-docx', docx.__version__ if hasattr\\(docx,'__version__'\\) else 'ok'\\)\")",
+      "Bash(.venv/Scripts/python.exe scripts/build_fixtures.py)",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Bash(firebase emulators:start --only auth,firestore,storage --project demo-credit-audit)",
+      "Bash(echo \"launched emulators in background, PID $!\")",
+      "Bash(sleep 3; tail -40 /tmp/emulators.log 2>&1)",
+      "Bash(timeout 60 firebase emulators:start --only firestore --project demo-credit-audit)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/test_calculations.py -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/test_pdf_extraction.py -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/test_docx_report.py -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/test_access_control.py -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest -q)",
+      "Bash(npm --version)",
+      "Bash(npm install *)",
+      "Bash(.venv/Scripts/python.exe -c \"import sys; sys.path.insert\\(0,'backend'\\); from app.main import app; print\\('backend OK'\\)\")",
+      "Bash(npm run dev > /tmp/vite.log 2>&1 & *)",
+      "Bash(firebase emulators:start --only auth,storage --project demo-credit-audit)",
+      "Bash(break)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/unit/test_fake_firestore.py -q)",
+      "Bash(curl -s http://127.0.0.1:8000/health)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill //F //PID 12432)",
+      "Bash(taskkill //F //PID 29280)",
+      "Bash(curl -s --max-time 5 http://127.0.0.1:8000/health)"
+    ]
+  }
+}

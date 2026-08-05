@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// Deny-by-default. All Storage access goes through the FastAPI backend using the
+// firebase-admin SDK (which bypasses these rules). Clients receive short-lived
+// signed URLs from the backend rather than accessing Storage directly.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

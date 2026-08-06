@@ -1,0 +1,25 @@
+# Render Blueprint — deploys the FastAPI backend as a Docker web service.
+# In Render: New + -> Blueprint -> connect this repo. Render reads this file.
+# NOTE: the Firebase key is added separately as a Secret File (see deploy/README-render.md),
+# not here, so it never lives in git.
+services:
+  - type: web
+    name: credit-audit-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: singapore              # closest Render region to Laos
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: ENV
+        value: prod
+      - key: GCP_PROJECT_ID
+        value: checking-734d6
+      - key: STORAGE_BUCKET
+        value: checking-734d6.firebasestorage.app
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        value: /etc/secrets/service-account.json   # Render mounts secret files here
+      - key: CORS_ORIGINS
+        value: https://checking.ssmilaos.com,http://localhost:5173

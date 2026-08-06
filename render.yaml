@@ -22,4 +22,4 @@ services:
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/service-account.json   # Render mounts secret files here
       - key: CORS_ORIGINS
-        value: https://checking.ssmilaos.com,http://localhost:5173
+        value: https://checking.jarnmua.com,http://localhost:5173

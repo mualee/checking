@@ -10,6 +10,8 @@ __pycache__/
 .env
 .env.*
 !.env.example
+# frontend/.env.production holds only the PUBLIC Firebase web config — safe to commit
+!frontend/.env.production
 *-service-account.json
 service-account*.json
 

@@ -19,6 +19,10 @@ services:
         value: checking-734d6
       - key: STORAGE_BUCKET
         value: checking-734d6.firebasestorage.app
+      # Firebase Storage bucket isn't set up -> store files on local disk (ephemeral).
+      # Switch to "emulator" once a real bucket exists (see STORAGE_BUCKET above).
+      - key: STORAGE_BACKEND
+        value: local
       - key: GOOGLE_APPLICATION_CREDENTIALS
         value: /etc/secrets/service-account.json   # Render mounts secret files here
       - key: CORS_ORIGINS

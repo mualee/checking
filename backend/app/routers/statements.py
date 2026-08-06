@@ -150,9 +150,10 @@ async def get_report(customer_id: str, statement_id: str, user: CurrentUser) -> 
     if not report_path:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="report not available")
 
-    # In prod, hand back a short-lived signed GCS URL. In dev, the client downloads
-    # the bytes via the auth-protected /report/file endpoint (below).
-    if get_settings().env == "prod":
+    # With real GCS, hand back a short-lived signed URL. Otherwise (local storage),
+    # the client downloads the bytes via the auth-protected /report/file endpoint.
+    settings = get_settings()
+    if settings.env == "prod" and settings.storage_backend != "local":
         return {"url": signed_url(report_path), "mode": "signed"}
     return {"url": None, "mode": "stream"}
 

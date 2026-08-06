@@ -16,8 +16,8 @@ from app.core.config import get_settings
 
 
 def _use_local() -> bool:
-    s = get_settings()
-    return s.env == "dev" and s.storage_backend == "local"
+    # Local-disk storage works in any env (handy when Firebase Storage isn't set up).
+    return get_settings().storage_backend == "local"
 
 
 def _local_base() -> Path:

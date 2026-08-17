@@ -36,8 +36,8 @@ Deploy ຈາກ GitHub ໂດຍກົງ. ໃຊ້ Docker (`backend/Dockerfil
 | key | value |
 |---|---|
 | `ENV` | `prod` |
-| `GCP_PROJECT_ID` | `checking-734d6` |
-| `STORAGE_BUCKET` | `checking-734d6.firebasestorage.app` |
+| `GCP_PROJECT_ID` | `hrm-dev-24dff` |
+| `STORAGE_BUCKET` | `hrm-dev-24dff.firebasestorage.app` |
 | `GOOGLE_APPLICATION_CREDENTIALS` | `/etc/secrets/service-account.json` |
 | `CORS_ORIGINS` | `https://checking.ssmilaos.com,http://localhost:5173` |
 

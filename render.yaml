@@ -2,6 +2,8 @@
 # In Render: New + -> Blueprint -> connect this repo. Render reads this file.
 # NOTE: the Firebase key is added separately as a Secret File (see deploy/README-render.md),
 # not here, so it never lives in git.
+# NOTE: GCP_PROJECT_ID below is hrm-dev-24dff — the mounted service-account.json Secret File
+# must be a key for THIS project, or Admin SDK calls (Firestore/Auth/Storage) will fail.
 services:
   - type: web
     name: credit-audit-api
@@ -16,9 +18,9 @@ services:
       - key: ENV
         value: prod
       - key: GCP_PROJECT_ID
-        value: checking-734d6
+        value: hrm-dev-24dff
       - key: STORAGE_BUCKET
-        value: checking-734d6.firebasestorage.app
+        value: hrm-dev-24dff.firebasestorage.app
       # Firebase Storage bucket isn't set up -> store files on local disk (ephemeral).
       # Switch to "emulator" once a real bucket exists (see STORAGE_BUCKET above).
       - key: STORAGE_BACKEND

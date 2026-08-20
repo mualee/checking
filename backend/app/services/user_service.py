@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from firebase_admin import firestore
+from pydantic import ValidationError
 
-from app.core.constants import COL_USERS
+from app.core.constants import COL_USERS, resolve_role
 from app.core.firebase import get_auth, get_firestore_client
 from app.models.user import UserCreate, UserOut, UserUpdate
 
@@ -13,7 +14,7 @@ def _to_out(uid: str, data: dict) -> UserOut:
         uid=uid,
         name=data.get("name", ""),
         email=data.get("email", ""),
-        role=data["role"],
+        role=resolve_role(data["role"]),
         department=data.get("department", ""),
         is_active=bool(data.get("isActive", True)),
         created_at=data.get("createdAt"),
@@ -21,8 +22,20 @@ def _to_out(uid: str, data: dict) -> UserOut:
 
 
 def list_users() -> list[UserOut]:
+    """Skip docs with no role mapping into this app's model (see resolve_role).
+
+    users/{uid} is a directory shared with other internal apps, so it holds
+    profiles this app has no equivalent for. Those shouldn't fail the whole
+    listing.
+    """
     db = get_firestore_client()
-    return [_to_out(doc.id, doc.to_dict() or {}) for doc in db.collection(COL_USERS).stream()]
+    out = []
+    for doc in db.collection(COL_USERS).stream():
+        try:
+            out.append(_to_out(doc.id, doc.to_dict() or {}))
+        except (ValidationError, KeyError):
+            continue
+    return out
 
 
 def get_user(uid: str) -> UserOut | None:

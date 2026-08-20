@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Search, UserPlus } from "lucide-react";
 import { useCustomers } from "@/hooks/useCustomers";
 import { ApiError } from "@/lib/api";
@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { PageHeader, Skeleton, EmptyState, ErrorState } from "@/components/ui/misc";
 
 export function CustomersPage() {
+  const navigate = useNavigate();
   const { data, isLoading, error } = useCustomers();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("all");
@@ -81,15 +82,13 @@ export function CustomersPage() {
               </TableHeader>
               <TableBody>
                 {filtered.map((c) => (
-                  <TableRow key={c.id} className="cursor-pointer">
+                  <TableRow
+                    key={c.id}
+                    className="cursor-pointer"
+                    onClick={() => navigate({ to: "/customers/$customerId", params: { customerId: c.id } })}
+                  >
                     <TableCell>
-                      <Link
-                        to="/customers/$customerId"
-                        params={{ customerId: c.id }}
-                        className="font-medium hover:text-primary"
-                      >
-                        {c.full_name}
-                      </Link>
+                      <span className="font-medium hover:text-primary">{c.full_name}</span>
                     </TableCell>
                     <TableCell>{c.account_no || "-"}</TableCell>
                     <TableCell>{c.phone || "-"}</TableCell>

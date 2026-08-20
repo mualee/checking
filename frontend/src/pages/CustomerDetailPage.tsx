@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { ArrowLeft, FileUp, Pencil } from "lucide-react";
 import { useCustomer, useUpdateCustomer } from "@/hooks/useCustomers";
@@ -136,6 +136,7 @@ function EditForm({
 }
 
 function StatementsList({ customerId }: { customerId: string }) {
+  const navigate = useNavigate();
   const { data: statements, isLoading, error } = useStatements(customerId);
 
   return (
@@ -165,15 +166,18 @@ function StatementsList({ customerId }: { customerId: string }) {
             </TableHeader>
             <TableBody>
               {statements.map((s) => (
-                <TableRow key={s.id}>
+                <TableRow
+                  key={s.id}
+                  className="cursor-pointer"
+                  onClick={() =>
+                    navigate({
+                      to: "/customers/$customerId/statements/$statementId",
+                      params: { customerId, statementId: s.id },
+                    })
+                  }
+                >
                   <TableCell>
-                    <Link
-                      to="/customers/$customerId/statements/$statementId"
-                      params={{ customerId, statementId: s.id }}
-                      className="font-medium hover:text-primary"
-                    >
-                      {s.file_name}
-                    </Link>
+                    <span className="font-medium hover:text-primary">{s.file_name}</span>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatDate(s.uploaded_at)}

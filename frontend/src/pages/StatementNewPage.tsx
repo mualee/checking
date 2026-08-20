@@ -30,15 +30,12 @@ export function StatementNewPage({ customerId }: { customerId: string }) {
   async function onSubmit() {
     if (!file) return;
     try {
-      const statement = await upload.mutateAsync({
+      await upload.mutateAsync({
         file,
         openingBalance: openingBalance || undefined,
       });
       toast("ອັບໂຫລດສຳເລັດ ກຳລັງປະມວນຜົນ", { variant: "success" });
-      navigate({
-        to: "/customers/$customerId/statements/$statementId",
-        params: { customerId, statementId: statement.id },
-      });
+      navigate({ to: "/customers/$customerId", params: { customerId } });
     } catch (err) {
       toast("ອັບໂຫລດບໍ່ສຳເລັດ", {
         variant: "error",

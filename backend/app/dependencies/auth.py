@@ -13,7 +13,7 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, status
 from pydantic import BaseModel
 
-from app.core.constants import COL_USERS, UserRole
+from app.core.constants import COL_USERS, UserRole, resolve_role
 from app.core.firebase import get_auth, get_firestore_client
 
 
@@ -54,7 +54,7 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account deactivated")
 
     try:
-        role = UserRole(data["role"])
+        role = resolve_role(data["role"])
     except (KeyError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
                             detail="user has no valid role") from exc

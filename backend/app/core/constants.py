@@ -10,6 +10,30 @@ class UserRole(str, Enum):
     ADMIN = "admin"
 
 
+# users/{uid} is a directory shared with other internal apps, whose own role
+# vocabulary (job categories, not this app's permissions) leaks in here.
+# Map those to the closest equivalent in this app's model.
+_EXTERNAL_ROLE_ALIASES = {
+    "employee": UserRole.OFFICER,
+    "it": UserRole.OFFICER,
+    "user": UserRole.OFFICER,
+}
+
+
+def resolve_role(raw: str) -> UserRole:
+    """Map a Firestore users/{uid}.role value to this app's UserRole.
+
+    Raises ValueError for values with no known mapping (same as UserRole(raw)).
+    """
+    try:
+        return UserRole(raw)
+    except ValueError:
+        mapped = _EXTERNAL_ROLE_ALIASES.get(raw)
+        if mapped is None:
+            raise
+        return mapped
+
+
 class CustomerStatus(str, Enum):
     ACTIVE = "active"
     ARCHIVED = "archived"

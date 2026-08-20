@@ -9,6 +9,13 @@
       ]
     },
     {
+      "collectionGroup": "statements",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "uploadedBy", "order": "ASCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "auditLogs",
       "queryScope": "COLLECTION",
       "fields": [

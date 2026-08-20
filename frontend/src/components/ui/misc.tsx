@@ -39,6 +39,14 @@ export function EmptyState({ title, description }: { title: string; description?
   );
 }
 
+export function ConnectingHint() {
+  return (
+    <p className="mt-2 text-center text-xs text-muted-foreground">
+      ກຳລັງເຊື່ອມຕໍ່ເຊີບເວີ... ອາດໃຊ້ເວລາເຖິງ 1 ນາທີ
+    </p>
+  );
+}
+
 export function ErrorState({ message }: { message: string }) {
   return (
     <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">

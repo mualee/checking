@@ -9,11 +9,11 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { PageHeader, Skeleton, EmptyState, ErrorState } from "@/components/ui/misc";
+import { PageHeader, Skeleton, EmptyState, ErrorState, ConnectingHint } from "@/components/ui/misc";
 
 export function CustomersPage() {
   const navigate = useNavigate();
-  const { data, isLoading, error } = useCustomers();
+  const { data, isLoading, error, failureCount } = useCustomers();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<string>("all");
 
@@ -63,6 +63,7 @@ export function CustomersPage() {
               {[...Array(4)].map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
+              {failureCount > 0 && <ConnectingHint />}
             </div>
           ) : error ? (
             <ErrorState

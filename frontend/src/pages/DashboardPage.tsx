@@ -3,11 +3,11 @@ import { Users, UserPlus, ScrollText, ArrowRight } from "lucide-react";
 import { useCustomers } from "@/hooks/useCustomers";
 import { useAuthStore } from "@/store/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageHeader, Skeleton } from "@/components/ui/misc";
+import { PageHeader, Skeleton, ConnectingHint } from "@/components/ui/misc";
 
 export function DashboardPage() {
   const profile = useAuthStore((s) => s.profile);
-  const { data: customers, isLoading } = useCustomers();
+  const { data: customers, isLoading, failureCount } = useCustomers();
 
   const total = customers?.length ?? 0;
   const active = customers?.filter((c) => c.status === "active").length ?? 0;
@@ -52,6 +52,7 @@ export function DashboardPage() {
               {[...Array(3)].map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
+              {failureCount > 0 && <ConnectingHint />}
             </div>
           ) : recent.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">ຍັງບໍ່ມີລູກຄ້າ</p>

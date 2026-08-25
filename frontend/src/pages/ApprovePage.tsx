@@ -19,7 +19,12 @@ import { Select } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageHeader, Skeleton, Spinner, EmptyState } from "@/components/ui/misc";
+import {
+  PageHeader,
+  Skeleton,
+  Spinner,
+  EmptyState,
+} from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
 
 const schema = z.object({
@@ -34,7 +39,10 @@ const DECISION_LABEL: Record<ApprovalDecision, string> = {
   rejected: "ບໍ່ຜ່ານ",
   partial: "ຜ່ານບາງສ່ວນ",
 };
-const DECISION_VARIANT: Record<ApprovalDecision, "success" | "destructive" | "warning"> = {
+const DECISION_VARIANT: Record<
+  ApprovalDecision,
+  "success" | "destructive" | "warning"
+> = {
   approved: "success",
   rejected: "destructive",
   partial: "warning",
@@ -84,10 +92,10 @@ export function ApprovePage({
     }
   }
 
-  if (isLoading) return <Skeleton className="h-64 w-full" />;
+  if (isLoading) return <Skeleton className="w-full h-64" />;
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="max-w-2xl mx-auto">
       <Link
         to="/customers/$customerId/statements/$statementId"
         params={{ customerId, statementId }}
@@ -97,13 +105,16 @@ export function ApprovePage({
         ກັບຄືນ
       </Link>
       <PageHeader title="ອະນຸມັດ Statement" description={s?.file_name} />
-
+      // Show statement summary
       {s && (
         <Card className="mb-6">
           <CardContent className="grid grid-cols-2 gap-3 py-4 text-sm">
             <Info label="ຍອດຮັບລວມ" value={formatKip(s.total_credit)} />
             <Info label="ຍອດຈ່າຍລວມ" value={formatKip(s.total_debit)} />
-            <Info label="ຈຳນວນທຸລະກຳ" value={String(s.total_transactions ?? 0)} />
+            <Info
+              label="ຈຳນວນທຸລະກຳ"
+              value={String(s.total_transactions ?? 0)}
+            />
             <Info
               label="ກວດສອບ"
               value={s.validation?.matched ? "ຜ່ານ" : "ບໍ່ຜ່ານ"}
@@ -111,7 +122,6 @@ export function ApprovePage({
           </CardContent>
         </Card>
       )}
-
       {/* Existing decisions (visible to everyone with access, incl. officers) */}
       {approvals && approvals.length > 0 && (
         <Card className="mb-6">
@@ -120,19 +130,28 @@ export function ApprovePage({
           </CardHeader>
           <CardContent className="space-y-3">
             {approvals.map((a) => (
-              <div key={a.id} className="rounded-md border p-3">
+              <div key={a.id} className="p-3 border rounded-md">
                 <div className="flex items-center justify-between">
-                  <Badge variant={DECISION_VARIANT[a.decision]}>{DECISION_LABEL[a.decision]}</Badge>
-                  <span className="text-xs text-muted-foreground">{formatDate(a.decided_at)}</span>
+                  <Badge variant={DECISION_VARIANT[a.decision]}>
+                    {DECISION_LABEL[a.decision]}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDate(a.decided_at)}
+                  </span>
                 </div>
-                <p className="mt-2 text-sm">ວົງເງິນ: {formatKip(a.approved_amount)}</p>
-                {a.reason && <p className="mt-1 text-sm text-muted-foreground">{a.reason}</p>}
+                <p className="mt-2 text-sm">
+                  ວົງເງິນ: {formatKip(a.approved_amount)}
+                </p>
+                {a.reason && (
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {a.reason}
+                  </p>
+                )}
               </div>
             ))}
           </CardContent>
         </Card>
       )}
-
       {canDecide ? (
         <Card>
           <CardHeader>
@@ -150,15 +169,25 @@ export function ApprovePage({
               </div>
               <div className="space-y-1.5">
                 <Label>ວົງເງິນອະນຸມັດ (Kip)</Label>
-                <Input type="number" step="0.01" {...register("approved_amount")} />
+                <Input
+                  type="number"
+                  step="0.01"
+                  {...register("approved_amount")}
+                />
                 {errors.approved_amount && (
-                  <p className="text-xs text-destructive">{errors.approved_amount.message}</p>
+                  <p className="text-xs text-destructive">
+                    {errors.approved_amount.message}
+                  </p>
                 )}
               </div>
               <div className="space-y-1.5">
                 <Label>ເຫດຜົນ</Label>
                 <Textarea rows={4} {...register("reason")} />
-                {errors.reason && <p className="text-xs text-destructive">{errors.reason.message}</p>}
+                {errors.reason && (
+                  <p className="text-xs text-destructive">
+                    {errors.reason.message}
+                  </p>
+                )}
               </div>
               <div className="flex justify-end">
                 <Button type="submit" disabled={approve.isPending}>

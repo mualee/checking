@@ -1,43 +1,56 @@
 import { useEffect, type ReactNode } from "react";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "@/lib/firebase";
 import { api, ApiError } from "@/lib/api";
+import { getToken, clearToken } from "@/lib/authClient";
 import { useAuthStore } from "@/store/auth";
 import type { UserProfile } from "@/lib/types";
 
 /**
- * Bridges Firebase auth state into the Zustand store and fetches the backend
- * profile (role) from GET /users/me. Renders children once resolved.
+ * On mount, if a local auth token is present, load the backend profile (role)
+ * from GET /users/me and mark the session authenticated. Renders children once
+ * resolved. Re-checks whenever another part of the app changes `authed`
+ * (e.g. after login/logout), so the profile stays in sync.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const setFirebaseUser = useAuthStore((s) => s.setFirebaseUser);
+  const authed = useAuthStore((s) => s.authed);
+  const setAuthed = useAuthStore((s) => s.setAuthed);
   const setProfile = useAuthStore((s) => s.setProfile);
   const setLoading = useAuthStore((s) => s.setLoading);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
-      if (!user) {
+    let cancelled = false;
+
+    async function resolveSession() {
+      if (!getToken()) {
+        if (cancelled) return;
         setProfile(null);
+        setAuthed(false);
         setLoading(false);
         return;
       }
       try {
         const profile = await api.get<UserProfile>("/users/me");
+        if (cancelled) return;
         setProfile(profile);
+        setAuthed(true);
       } catch (err) {
-        // If the profile can't be loaded (e.g. unprovisioned user), sign out.
+        if (cancelled) return;
+        // Invalid/expired token or unprovisioned user: drop the session.
         if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-          setProfile(null);
-        } else {
-          setProfile(null);
+          clearToken();
         }
+        setProfile(null);
+        setAuthed(false);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
-    });
-    return unsub;
-  }, [setFirebaseUser, setProfile, setLoading]);
+    }
+
+    void resolveSession();
+    return () => {
+      cancelled = true;
+    };
+    // Re-run when `authed` is toggled by login/logout.
+  }, [authed, setAuthed, setProfile, setLoading]);
 
   return <>{children}</>;
 }

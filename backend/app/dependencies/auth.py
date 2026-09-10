@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import Depends, Header, HTTPException, status
 from pydantic import BaseModel
 
+from app.core.config import get_settings
 from app.core.constants import COL_USERS, UserRole, resolve_role
 from app.core.firebase import get_auth, get_firestore_client
 
@@ -38,13 +39,21 @@ async def get_current_user(
     if not token:
         raise _unauthorized("empty bearer token")
 
-    auth = get_auth()
-    try:
-        decoded = auth.verify_id_token(token)
-    except Exception as exc:  # noqa: BLE001 - any verification failure is a 401
-        raise _unauthorized(f"invalid token: {exc}") from exc
-
-    uid = decoded["uid"]
+    if get_settings().local_mode:
+        # Local, offline JWT issued by /auth/login.
+        from app.core.local_auth import decode_token
+        try:
+            decoded = decode_token(token)
+        except Exception as exc:  # noqa: BLE001 - any verification failure is a 401
+            raise _unauthorized(f"invalid token: {exc}") from exc
+        uid = decoded["sub"]
+    else:
+        auth = get_auth()
+        try:
+            decoded = auth.verify_id_token(token)
+        except Exception as exc:  # noqa: BLE001 - any verification failure is a 401
+            raise _unauthorized(f"invalid token: {exc}") from exc
+        uid = decoded["uid"]
     snap = get_firestore_client().collection(COL_USERS).document(uid).get()
     if not snap.exists:
         raise _unauthorized("user is not provisioned")

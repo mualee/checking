@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
-import { ArrowLeft, FileUp, Pencil } from "lucide-react";
+import { ArrowLeft, Pencil, Building2, Printer } from "lucide-react";
 import { useCustomer, useUpdateCustomer } from "@/hooks/useCustomers";
-import { useStatements } from "@/hooks/useStatements";
+import { useStatements, type UploadSource } from "@/hooks/useStatements";
 import { ApiError } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -14,6 +14,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatusBadge } from "@/components/StatusBadge";
 import { PageHeader, Skeleton, EmptyState, ErrorState } from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
+
+// Bank-branded upload button gradients (white text).
+export const BCEL_BTN_STYLE: CSSProperties = {
+  backgroundImage:
+    "linear-gradient(62deg, rgba(200,0,0,1) 0%, rgba(216,27,27,1) 35%, rgba(0,130,205,1) 100%)",
+};
+export const JBL_BTN_STYLE: CSSProperties = {
+  backgroundImage: "linear-gradient(90deg, #EE1C25, #E31B23)",
+};
 
 export function CustomerDetailPage({ customerId }: { customerId: string }) {
   const { data: customer, isLoading, error } = useCustomer(customerId);
@@ -35,14 +44,7 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
         ກັບຄືນ
       </Link>
       <PageHeader title={customer.full_name} description={`ເລກບັນຊີ: ${customer.account_no || "-"}`}>
-        <Link
-          to="/customers/$customerId/statements/new"
-          params={{ customerId }}
-          className={buttonVariants()}
-        >
-          <FileUp className="size-4" />
-          ອັບໂຫລດ Statement
-        </Link>
+        <UploadButtons customerId={customerId} />
       </PageHeader>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -72,6 +74,47 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
           <StatementsList customerId={customerId} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Upload buttons: each navigates to the upload page with the chosen source
+ * (bank × medium — BCEL/JBL, digital pdfplumber / printer OCR). */
+function UploadButtons({ customerId }: { customerId: string }) {
+  const navigate = useNavigate();
+  const go = (source: Exclude<UploadSource, "auto">) =>
+    navigate({
+      to: "/customers/$customerId/statements/new",
+      params: { customerId },
+      search: { source },
+    });
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Button
+        onClick={() => go("digital")}
+        className="border-0 text-white hover:opacity-90"
+        style={BCEL_BTN_STYLE}
+      >
+        <Building2 className="size-4" />
+        ອັບໂຫລດ PDF ຈາກ ທະນະຄານ
+      </Button>
+      <Button variant="secondary" onClick={() => go("scan")}>
+        <Printer className="size-4" />
+        ອັບໂຫລດ PDF ຈາກ Printer
+      </Button>
+      <Button
+        onClick={() => go("jbl")}
+        className="border-0 text-white hover:opacity-90"
+        style={JBL_BTN_STYLE}
+      >
+        <Building2 className="size-4" />
+        ອັບໂຫລດ PDF ຈາກ JBL
+      </Button>
+      <Button variant="secondary" onClick={() => go("jbl_scan")}>
+        <Printer className="size-4" />
+        ອັບໂຫລດ PDF ຈາກ JBL (Printer)
+      </Button>
     </div>
   );
 }

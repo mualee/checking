@@ -28,6 +28,70 @@ def _storage_prefix(customer_id: str, statement_id: str) -> str:
     return f"statements/{customer_id}/{statement_id}"
 
 
+def _extract(pdf_bytes: bytes, source: str):
+    """Route to the right extractor. Logical separation of the two PDF kinds:
+
+      - digital PDF (has a text layer)  -> pdfplumber table extraction
+      - scanned/printer PDF (image only) -> offline OCR
+
+    Sources — two banks × two media:
+      "digital"  BCEL digital  -> pdfplumber (BCEL layout)
+      "scan"     BCEL printer  -> OCR (BCEL layout)
+      "jbl"      JBL digital   -> pdfplumber (MARUHAN layout)
+      "jbl_scan" JBL printer   -> OCR (MARUHAN layout)
+      "auto"     try BCEL digital, then JBL digital, then OCR.
+    OCR (onnxruntime/opencv) is imported lazily so digital paths never load it.
+    """
+    # Explicit digital banks: straight to their text parser (fastest, no OCR).
+    if source == "digital":
+        return extract_transactions_from_pdf(pdf_bytes)
+    if source == "jbl":
+        from app.services.maruhan_extraction import extract_maruhan_from_pdf
+        return extract_maruhan_from_pdf(pdf_bytes)
+
+    if source == "jbl_scan":
+        from app.services.ocr_extraction import OCRUnavailableError, extract_transactions_via_ocr
+        try:
+            rows = extract_transactions_via_ocr(pdf_bytes, layout="maruhan")
+        except OCRUnavailableError as exc:
+            raise PDFExtractionError(f"OCR is not available in this build: {exc}") from exc
+        if not rows:
+            raise PDFExtractionError("OCR found no transactions in the scanned JBL PDF")
+        return rows
+
+    if source == "auto":
+        # Try the (fast) digital extractors first; fall back to OCR only if neither
+        # yields text rows. Avoids a separate full-document text-layer scan.
+        for fn in (_try_bcel_digital, _try_jbl_digital):
+            rows = fn(pdf_bytes)
+            if rows:
+                return rows
+
+    from app.services.ocr_extraction import OCRUnavailableError, extract_transactions_via_ocr
+    try:
+        rows = extract_transactions_via_ocr(pdf_bytes)
+    except OCRUnavailableError as exc:
+        raise PDFExtractionError(f"OCR is not available in this build: {exc}") from exc
+    if not rows:
+        raise PDFExtractionError("OCR found no transactions in the scanned PDF")
+    return rows
+
+
+def _try_bcel_digital(pdf_bytes: bytes):
+    try:
+        return extract_transactions_from_pdf(pdf_bytes)
+    except PDFExtractionError:
+        return None
+
+
+def _try_jbl_digital(pdf_bytes: bytes):
+    from app.services.maruhan_extraction import extract_maruhan_from_pdf
+    try:
+        return extract_maruhan_from_pdf(pdf_bytes)
+    except PDFExtractionError:
+        return None
+
+
 def run_statement_pipeline(
     customer_id: str,
     statement_id: str,
@@ -38,6 +102,7 @@ def run_statement_pipeline(
     account_no: str = "",
     opening_balance: Decimal | None = None,
     actor_email: str | None = None,
+    source: str = "auto",
 ) -> ProcessingStatus:
     """Run steps 3-9. Returns the terminal ProcessingStatus.
 
@@ -46,14 +111,41 @@ def run_statement_pipeline(
     """
     prefix = _storage_prefix(customer_id, statement_id)
 
-    # Step 3: extract
+    # Step 3: extract (auto-routes scanned PDFs through OCR)
     try:
-        transactions = extract_transactions_from_pdf(pdf_bytes)
+        transactions = _extract(pdf_bytes, source)
     except PDFExtractionError as exc:
         logger.warning("extraction failed for %s/%s: %s", customer_id, statement_id, exc)
         statement_service.set_status(customer_id, statement_id, ProcessingStatus.ERROR,
                                      error_detail=str(exc))
         return ProcessingStatus.ERROR
+
+    # Persist the extracted rows immediately so a person can review/correct them
+    # (esp. OCR results) even if validation later fails.
+    upload_json(f"{prefix}/transactions.json", [t.to_json_dict() for t in transactions])
+
+    return process_transactions(
+        customer_id, statement_id, transactions, uploaded_by,
+        customer_name=customer_name, account_no=account_no,
+        opening_balance=opening_balance, actor_email=actor_email,
+    )
+
+
+def process_transactions(
+    customer_id: str,
+    statement_id: str,
+    transactions,
+    uploaded_by: str,
+    *,
+    customer_name: str = "",
+    account_no: str = "",
+    opening_balance: Decimal | None = None,
+    actor_email: str | None = None,
+) -> ProcessingStatus:
+    """Steps 4-9 over an explicit transaction list. Reused by the review/correct
+    flow (re-validate after a human edits OCR output) as well as initial upload.
+    The caller is responsible for having saved transactions.json."""
+    prefix = _storage_prefix(customer_id, statement_id)
 
     if opening_balance is None:
         first = transactions[0]
@@ -92,8 +184,7 @@ def run_statement_pipeline(
     table2 = build_table2(transactions)
     table3 = build_table3(transactions)
 
-    # Step 6: transactions.json in Storage (never per-row in Firestore)
-    upload_json(f"{prefix}/transactions.json", [t.to_json_dict() for t in transactions])
+    # (transactions.json already persisted by the caller.)
 
     # Step 7: summaries -> Firestore
     statement_service.save_results(

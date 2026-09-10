@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
-import { signOut } from "firebase/auth";
+import { logout } from "@/lib/authClient";
 import {
   LayoutDashboard,
   Users,
@@ -8,15 +8,30 @@ import {
   UserCog,
   Settings,
   LogOut,
-  Menu,
   ShieldCheck,
+  Sun,
+  Moon,
 } from "lucide-react";
-import { auth } from "@/lib/firebase";
+import { getTheme, toggleTheme, type Theme } from "@/lib/theme";
 import { useAuthStore } from "@/store/auth";
 import type { Role } from "@/lib/types";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
 
 interface NavItem {
   to: string;
@@ -39,65 +54,68 @@ const ROLE_LABEL: Record<Role, string> = {
   admin: "ຜູ້ດູແລລະບົບ",
 };
 
-export function AppShell() {
+function AppSidebar() {
   const profile = useAuthStore((s) => s.profile);
-  const navigate = useNavigate();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { setOpenMobile, isMobile } = useSidebar();
 
   const role = profile?.role;
   const items = NAV.filter((n) => role && n.roles.includes(role));
 
-  async function handleLogout() {
-    await signOut(auth);
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <div className="flex h-10 items-center gap-2 px-2">
+          <ShieldCheck className="size-6 shrink-0 text-sidebar-primary" />
+          <span className="truncate font-semibold group-data-[collapsible=icon]:hidden">
+            ກວດສາ Statement
+          </span>
+        </div>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarMenu>
+            {items.map((item) => {
+              const active = pathname === item.to || pathname.startsWith(item.to + "/");
+              const Icon = item.icon;
+              return (
+                <SidebarMenuItem key={item.to}>
+                  <SidebarMenuButton asChild isActive={active} tooltip={item.label}>
+                    <Link to={item.to} onClick={() => isMobile && setOpenMobile(false)}>
+                      <Icon className="size-4" />
+                      <span>{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              );
+            })}
+          </SidebarMenu>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarFooter />
+      <SidebarRail />
+    </Sidebar>
+  );
+}
+
+export function AppShell() {
+  const profile = useAuthStore((s) => s.profile);
+  const navigate = useNavigate();
+  const [theme, setTheme] = useState<Theme>(getTheme());
+  const role = profile?.role;
+
+  function handleLogout() {
+    logout();
+    useAuthStore.getState().reset();
     navigate({ to: "/login" });
   }
 
   return (
-    <div className="flex min-h-screen bg-muted/30">
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          "fixed inset-y-0 left-0 z-40 w-64 border-r bg-card transition-transform md:static md:translate-x-0",
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-      >
-        <div className="flex h-16 items-center gap-2 border-b px-5">
-          <ShieldCheck className="size-6 text-primary" />
-          <span className="font-semibold leading-tight">ກວດສາ Statement</span>
-        </div>
-        <nav className="flex flex-col gap-1 p-3">
-          {items.map((item) => {
-            const active = pathname === item.to || pathname.startsWith(item.to + "/");
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  active ? "bg-primary text-primary-foreground" : "hover:bg-accent"
-                )}
-              >
-                <Icon className="size-4" />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-      </aside>
-
-      {mobileOpen && (
-        <div className="fixed inset-0 z-30 bg-black/40 md:hidden" onClick={() => setMobileOpen(false)} />
-      )}
-
-      {/* Main column */}
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between gap-4 border-b bg-card px-4 md:px-6">
-          <Button variant="ghost" size="icon" className="md:hidden" onClick={() => setMobileOpen(true)}>
-            <Menu className="size-5" />
-          </Button>
+    <SidebarProvider>
+      <AppSidebar />
+      <SidebarInset>
+        <header className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-card px-4 md:px-6">
+          <SidebarTrigger />
           <div className="ml-auto flex items-center gap-3">
             <div className="text-right">
               <p className="text-sm font-medium leading-tight">{profile?.name || profile?.email}</p>
@@ -107,6 +125,15 @@ export function AppShell() {
                 </Badge>
               )}
             </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setTheme(toggleTheme())}
+              aria-label={theme === "dark" ? "ໂໝດແຈ້ງ" : "ໂໝດມືດ"}
+              title={theme === "dark" ? "ໂໝດແຈ້ງ" : "ໂໝດມືດ"}
+            >
+              {theme === "dark" ? <Sun className="size-5" /> : <Moon className="size-5" />}
+            </Button>
             <Button variant="outline" size="sm" onClick={handleLogout}>
               <LogOut className="size-4" />
               ອອກຈາກລະບົບ
@@ -116,7 +143,7 @@ export function AppShell() {
         <main className="min-w-0 flex-1 p-4 md:p-6">
           <Outlet />
         </main>
-      </div>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }

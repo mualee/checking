@@ -6,6 +6,7 @@ from typing import Annotated
 
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     Form,
@@ -30,15 +31,17 @@ from app.models.approval import ApprovalCreate, ApprovalOut
 from app.models.statement import StatementOut
 from app.services import statement_service
 from app.services.audit_service import write_audit_log
-from app.services.pipeline import run_statement_pipeline
+from app.models.transaction import TransactionRow
+from app.services.pipeline import process_transactions, run_statement_pipeline
 from app.services.storage_service import (
     download_bytes,
     download_json,
     signed_url,
     upload_bytes,
+    upload_json,
 )
 from app.core.config import get_settings
-from firebase_admin import firestore
+from app.core import sentinels
 
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -71,8 +74,10 @@ async def list_statements(customer_id: str, user: CurrentUser) -> list[Statement
 async def upload_statement(
     customer_id: str,
     user: CurrentUser,
+    background_tasks: BackgroundTasks,
     file: Annotated[UploadFile, File()],
     opening_balance: Annotated[str | None, Form()] = None,
+    source: Annotated[str, Form()] = "auto",
 ) -> StatementOut:
     db = get_firestore_client()
     customer_snap = assert_can_access_customer(db, user, customer_id)
@@ -100,16 +105,62 @@ async def upload_statement(
 
     ob = Decimal(opening_balance) if opening_balance else None
 
-    # Step 3-9: run synchronously off the event loop (Cloud Run-safe; see plan §3).
-    await run_in_threadpool(
+    # Steps 3-9 run in the BACKGROUND so the upload returns immediately (the doc is
+    # already 'processing'); the client polls the statement until it finishes.
+    # A big statement (esp. OCR) can take minutes — no reason to block the request.
+    background_tasks.add_task(
         run_statement_pipeline,
         customer_id, statement_id, pdf_bytes, user.uid,
         customer_name=customer_data.get("fullName", ""),
         account_no=customer_data.get("accountNo", ""),
         opening_balance=ob,
         actor_email=user.email,
+        source=source if source in ("auto", "digital", "scan") else "auto",
     )
 
+    snap = _load_statement_or_404(customer_id, statement_id)
+    return statement_service.doc_to_out(customer_id, statement_id, snap.to_dict() or {})
+
+
+@router.post("/{statement_id}/revalidate", response_model=StatementOut)
+async def revalidate_statement(
+    customer_id: str,
+    statement_id: str,
+    user: CurrentUser,
+    payload: dict,
+) -> StatementOut:
+    """Re-run validation + report over human-corrected transactions (the OCR
+    review flow). Body: {"transactions": [...], "opening_balance": "..."?}."""
+    db = get_firestore_client()
+    customer_snap = assert_can_access_customer(db, user, customer_id)
+    snap = _load_statement_or_404(customer_id, statement_id)
+    data = snap.to_dict() or {}
+    assert_can_access_statement(db, user, customer_id, data, customer_snap)
+    customer_data = customer_snap.to_dict() or {}
+
+    rows = payload.get("transactions")
+    if not isinstance(rows, list) or not rows:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="transactions required")
+    try:
+        transactions = [TransactionRow.from_json_dict(r) for r in rows]
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"invalid transaction data: {exc}") from exc
+
+    ob_raw = payload.get("opening_balance")
+    ob = Decimal(str(ob_raw)) if ob_raw not in (None, "") else None
+
+    # Persist the corrected rows, then re-run steps 4-9 off the event loop.
+    upload_json(f"statements/{customer_id}/{statement_id}/transactions.json",
+                [t.to_json_dict() for t in transactions])
+    await run_in_threadpool(
+        process_transactions,
+        customer_id, statement_id, transactions, user.uid,
+        customer_name=customer_data.get("fullName", ""),
+        account_no=customer_data.get("accountNo", ""),
+        opening_balance=ob,
+        actor_email=user.email,
+    )
     snap = _load_statement_or_404(customer_id, statement_id)
     return statement_service.doc_to_out(customer_id, statement_id, snap.to_dict() or {})
 
@@ -192,7 +243,7 @@ async def list_approvals(customer_id: str, statement_id: str, user: CurrentUser)
     approvals_ref = (
         db.collection("customers").document(customer_id)
         .collection("statements").document(statement_id)
-        .collection(COL_APPROVALS).order_by("decidedAt", direction=firestore.Query.DESCENDING)
+        .collection(COL_APPROVALS).order_by("decidedAt", direction=sentinels.DESCENDING)
     )
     out: list[ApprovalOut] = []
     for doc in approvals_ref.stream():
@@ -229,7 +280,7 @@ async def approve_statement(
     ref.set(
         {
             "decidedBy": manager.uid,
-            "decidedAt": firestore.SERVER_TIMESTAMP,
+            "decidedAt": sentinels.SERVER_TIMESTAMP,
             "decision": payload.decision.value,
             "approvedAmount": payload.approved_amount,
             "reason": payload.reason,

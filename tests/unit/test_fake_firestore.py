@@ -1,7 +1,7 @@
 """Unit tests for the in-memory Firestore shim — no emulator required."""
 from __future__ import annotations
 
-from firebase_admin import firestore
+from app.core import sentinels
 
 from app.core.fake_firestore import FakeFirestoreClient
 
@@ -60,7 +60,7 @@ def test_order_by_and_limit():
     col = db.collection("auditLogs")
     for i in range(5):
         col.document(f"l{i}").set({"n": i})
-    desc = list(col.order_by("n", direction=firestore.Query.DESCENDING).limit(2).stream())
+    desc = list(col.order_by("n", direction=sentinels.DESCENDING).limit(2).stream())
     assert [r.to_dict()["n"] for r in desc] == [4, 3]
 
 
@@ -69,8 +69,8 @@ def test_server_timestamp_resolved():
 
     db = FakeFirestoreClient()
     ref = db.collection("x").document("y")
-    ref.set({"createdAt": firestore.SERVER_TIMESTAMP,
-             "nested": {"checkedAt": firestore.SERVER_TIMESTAMP}})
+    ref.set({"createdAt": sentinels.SERVER_TIMESTAMP,
+             "nested": {"checkedAt": sentinels.SERVER_TIMESTAMP}})
     data = ref.get().to_dict()
     assert isinstance(data["createdAt"], datetime)
     assert isinstance(data["nested"]["checkedAt"], datetime)

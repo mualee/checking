@@ -13,30 +13,30 @@ function FullPageSpinner() {
 
 /** Blocks app pages until auth resolves; redirects to /login when unauthenticated. */
 export function AuthGate({ children }: { children: ReactNode }) {
-  const { loading, firebaseUser, profile } = useAuthStore();
+  const { loading, authed, profile } = useAuthStore();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && (!firebaseUser || !profile)) {
+    if (!loading && (!authed || !profile)) {
       navigate({ to: "/login" });
     }
-  }, [loading, firebaseUser, profile, navigate]);
+  }, [loading, authed, profile, navigate]);
 
   if (loading) return <FullPageSpinner />;
-  if (!firebaseUser || !profile) return <FullPageSpinner />;
+  if (!authed || !profile) return <FullPageSpinner />;
   return <>{children}</>;
 }
 
 /** For /login: sends already-authenticated users to the dashboard. */
 export function RedirectIfAuthed({ children }: { children: ReactNode }) {
-  const { loading, firebaseUser, profile } = useAuthStore();
+  const { loading, authed, profile } = useAuthStore();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && firebaseUser && profile) {
+    if (!loading && authed && profile) {
       navigate({ to: "/dashboard" });
     }
-  }, [loading, firebaseUser, profile, navigate]);
+  }, [loading, authed, profile, navigate]);
 
   if (loading) return <FullPageSpinner />;
   return <>{children}</>;

@@ -1,29 +1,34 @@
 """Date helpers for statement rows.
 
-Statement dates are printed as DD/MM/YYYY. A row starts a new transaction iff its
-date cell parses under that exact format; continuation (wrapped-description) rows
-have an empty date cell.
+Statement dates are printed as DD/MM/YYYY (BCEL) or DD-MM-YYYY (JBL/MARUHAN). A row
+starts a new transaction iff its date cell parses under one of those formats;
+continuation (wrapped-description) rows have an empty date cell.
 """
 from __future__ import annotations
 
 from datetime import datetime
 
 DATE_FORMAT = "%d/%m/%Y"
+# Accepted printed date formats across supported banks (slash: BCEL, dash: JBL).
+DATE_FORMATS = ("%d/%m/%Y", "%d-%m-%Y")
 
 
 def parse_statement_date(cell: str | None) -> datetime | None:
-    """Return a datetime if the cell is a valid DD/MM/YYYY date, else None.
+    """Return a datetime if the cell is a valid statement date, else None.
 
-    Strict: does not accept partial or malformed dates. Used as the discriminator
-    between new-transaction rows and continuation rows.
+    Accepts DD/MM/YYYY and DD-MM-YYYY. Strict otherwise: does not accept partial or
+    malformed dates. Used as the discriminator between new-transaction and
+    continuation rows, and by report generation to bucket rows by month.
     """
     text = (cell or "").strip()
     if not text:
         return None
-    try:
-        return datetime.strptime(text, DATE_FORMAT)
-    except ValueError:
-        return None
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
 
 
 def is_statement_date(cell: str | None) -> bool:

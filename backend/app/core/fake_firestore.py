@@ -14,14 +14,38 @@ NOT a full Firestore: single process, no persistence, no transactions/indexes. D
 """
 from __future__ import annotations
 
+import json
+import os
 import threading
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
-from firebase_admin import firestore
+from app.core.sentinels import DESCENDING as _DESCENDING
+from app.core.sentinels import SERVER_TIMESTAMP as _SENTINEL
 
-_SENTINEL = firestore.SERVER_TIMESTAMP
-_DESCENDING = firestore.Query.DESCENDING
+
+def _json_encode(value):
+    """Make a document value JSON-serializable, tagging datetimes so they can be
+    round-tripped back to real datetime objects on load."""
+    if isinstance(value, datetime):
+        return {"__dt__": value.isoformat()}
+    if isinstance(value, dict):
+        return {k: _json_encode(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_encode(v) for v in value]
+    return value
+
+
+def _json_decode(value):
+    """Inverse of _json_encode: restore tagged datetimes."""
+    if isinstance(value, dict):
+        if set(value.keys()) == {"__dt__"}:
+            return datetime.fromisoformat(value["__dt__"])
+        return {k: _json_decode(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_decode(v) for v in value]
+    return value
 
 
 def _resolve_sentinels(value):
@@ -175,11 +199,41 @@ class FakeCollectionRef(FakeQuery):
 
 
 class FakeStore:
-    """Holds all documents keyed by their full path tuple."""
+    """Holds all documents keyed by their full path tuple.
 
-    def __init__(self):
+    When a persist_path is given the whole tree is loaded from that JSON file on
+    construction and rewritten (atomically) after every mutation, so data
+    survives process restarts. Volume is small (an audit app), so a full-snapshot
+    write per mutation is simpler and safe enough.
+    """
+
+    def __init__(self, persist_path: str | os.PathLike | None = None):
         self._docs: dict[tuple[str, ...], dict] = {}
         self._lock = threading.RLock()
+        self._persist_path = Path(persist_path) if persist_path else None
+        if self._persist_path and self._persist_path.exists():
+            self._load()
+
+    def _load(self):
+        try:
+            raw = json.loads(self._persist_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return
+        for entry in raw:
+            path = tuple(entry["path"])
+            self._docs[path] = _json_decode(entry["data"])
+
+    def _save(self):
+        """Atomically snapshot the whole store to disk. Caller holds the lock."""
+        if not self._persist_path:
+            return
+        payload = [
+            {"path": list(path), "data": _json_encode(data)}
+            for path, data in self._docs.items()
+        ]
+        tmp = self._persist_path.with_suffix(self._persist_path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, self._persist_path)
 
     def get(self, path):
         with self._lock:
@@ -189,6 +243,7 @@ class FakeStore:
     def set(self, path, data):
         with self._lock:
             self._docs[path] = dict(data)
+            self._save()
 
     def update(self, path, data):
         with self._lock:
@@ -197,10 +252,12 @@ class FakeStore:
                 existing = {}
             existing.update(data)
             self._docs[path] = existing
+            self._save()
 
     def delete(self, path):
         with self._lock:
             self._docs.pop(path, None)
+            self._save()
 
     def iter_collection(self, path, *, group=False):
         """Yield (path, data) for docs directly under a collection, or (group mode)
@@ -220,8 +277,8 @@ class FakeStore:
 
 
 class FakeFirestoreClient:
-    def __init__(self):
-        self._store = FakeStore()
+    def __init__(self, persist_path: str | os.PathLike | None = None):
+        self._store = FakeStore(persist_path)
 
     def collection(self, name: str) -> FakeCollectionRef:
         return FakeCollectionRef(self._store, (name,))

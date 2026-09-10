@@ -6,7 +6,10 @@ import { router } from "./router";
 import { queryClient } from "./lib/queryClient";
 import { AuthProvider } from "./components/AuthProvider";
 import { Toaster } from "./components/ui/toast";
+import { initTheme } from "./lib/theme";
 import "./index.css";
+
+initTheme();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

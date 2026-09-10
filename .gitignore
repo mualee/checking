@@ -12,6 +12,8 @@ __pycache__/
 !.env.example
 # frontend/.env.production holds only the PUBLIC Firebase web config — safe to commit
 !frontend/.env.production
+# frontend/.env.electron holds only VITE_API_BASE=http://localhost:8000 — safe to commit
+!frontend/.env.electron
 *-service-account.json
 service-account*.json
 
@@ -27,10 +29,27 @@ storage-debug.log
 node_modules/
 dist/
 dist-ssr/
+release/
+release*/
 *.local
+
+# Build installers / packaged output (large binaries, regenerable)
+frontend/release-portable/
+*.exe
+
+# Test/sample statements (may contain real account data — keep out of git)
+sample_scan.pdf
+*.sample.pdf
 
 # Local dev storage backend (uploaded PDFs, generated reports)
 .devstorage
+
+# Local desktop app data (persistent store, uploaded files, secrets)
+.localdata/
+
+# PyInstaller backend build artifacts
+backend/build/
+backend/backend.spec
 
 # OS / editor
 .DS_Store

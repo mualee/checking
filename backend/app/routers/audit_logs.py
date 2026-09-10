@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
-from firebase_admin import firestore
+from app.core import sentinels
 
 from app.core.constants import COL_AUDIT_LOGS, AuditAction, UserRole
 from app.core.firebase import get_firestore_client
@@ -37,7 +37,7 @@ async def search_audit_logs(
     db = get_firestore_client()
     docs = (
         db.collection(COL_AUDIT_LOGS)
-        .order_by("timestamp", direction=firestore.Query.DESCENDING)
+        .order_by("timestamp", direction=sentinels.DESCENDING)
         .limit(_SCAN_CAP)
         .stream()
     )

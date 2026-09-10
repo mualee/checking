@@ -1,6 +1,11 @@
-import { auth } from "./firebase";
+import { getToken } from "./authClient";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "/api";
+// Desktop build injects the live backend URL (dynamic port) via preload;
+// fall back to the build-time env for web/dev.
+const API_BASE =
+  (typeof window !== "undefined" && window.desktop?.apiBase) ||
+  import.meta.env.VITE_API_BASE ||
+  "/api";
 
 export class ApiError extends Error {
   status: number;
@@ -13,10 +18,8 @@ export class ApiError extends Error {
 }
 
 async function authHeader(): Promise<Record<string, string>> {
-  const user = auth.currentUser;
-  if (!user) return {};
-  const token = await user.getIdToken();
-  return { Authorization: `Bearer ${token}` };
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 type RequestOptions = {

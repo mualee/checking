@@ -16,12 +16,18 @@ from app.core.config import get_settings
 
 
 def _use_local() -> bool:
-    # Local-disk storage works in any env (handy when Firebase Storage isn't set up).
-    return get_settings().storage_backend == "local"
+    # Local-disk storage works in any env (handy when Firebase Storage isn't set up),
+    # and is always used in the fully-local desktop mode.
+    settings = get_settings()
+    return settings.local_mode or settings.storage_backend == "local"
 
 
 def _local_base() -> Path:
-    base = Path(__file__).resolve().parents[2] / ".devstorage"
+    settings = get_settings()
+    if settings.local_mode:
+        base = settings.data_path / "storage"
+    else:
+        base = Path(__file__).resolve().parents[2] / ".devstorage"
     base.mkdir(parents=True, exist_ok=True)
     return base
 

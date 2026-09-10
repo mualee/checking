@@ -1,7 +1,7 @@
 """Append-only audit logging. Only the backend (service account) writes these."""
 from __future__ import annotations
 
-from firebase_admin import firestore
+from app.core import sentinels
 
 from app.core.constants import COL_AUDIT_LOGS, AuditAction, AuditTargetType
 from app.core.firebase import get_firestore_client
@@ -24,7 +24,7 @@ def write_audit_log(
             "action": action.value,
             "targetType": target_type.value,
             "targetId": target_id,
-            "timestamp": firestore.SERVER_TIMESTAMP,
+            "timestamp": sentinels.SERVER_TIMESTAMP,
             "details": details or {},
         }
     )

@@ -5,7 +5,7 @@ transactions.json in Storage. Firestore holds summaries + status only.
 """
 from __future__ import annotations
 
-from firebase_admin import firestore
+from app.core import sentinels
 
 from app.core.constants import COL_CUSTOMERS, COL_STATEMENTS, ProcessingStatus
 from app.core.firebase import get_firestore_client
@@ -71,7 +71,7 @@ def validation_to_storage(result: ValidationResult) -> dict:
     return {
         "matched": result.matched,
         "mismatchCount": result.mismatch_count,
-        "checkedAt": firestore.SERVER_TIMESTAMP,
+        "checkedAt": sentinels.SERVER_TIMESTAMP,
     }
 
 
@@ -83,7 +83,7 @@ def create_statement_doc(customer_id: str, *, file_name: str, storage_path: str,
             "fileName": file_name,
             "storagePath": storage_path,
             "uploadedBy": uploaded_by,
-            "uploadedAt": firestore.SERVER_TIMESTAMP,
+            "uploadedAt": sentinels.SERVER_TIMESTAMP,
             "processingStatus": ProcessingStatus.PROCESSING.value,
         }
     )
@@ -135,7 +135,7 @@ def save_report_path(customer_id: str, statement_id: str, report_path: str) -> N
     _statements_col(customer_id).document(statement_id).update(
         {
             "reportStoragePath": report_path,
-            "reportGeneratedAt": firestore.SERVER_TIMESTAMP,
+            "reportGeneratedAt": sentinels.SERVER_TIMESTAMP,
         }
     )
 
@@ -146,7 +146,7 @@ def get_statement_raw(customer_id: str, statement_id: str):
 
 def list_statements(customer_id: str) -> list[StatementOut]:
     docs = _statements_col(customer_id).order_by(
-        "uploadedAt", direction=firestore.Query.DESCENDING
+        "uploadedAt", direction=sentinels.DESCENDING
     ).stream()
     return [doc_to_out(customer_id, d.id, d.to_dict() or {}) for d in docs]
 

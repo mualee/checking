@@ -2,6 +2,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  createHashHistory,
   redirect,
   Outlet,
   useParams,
@@ -83,9 +84,17 @@ const customerDetailRoute = createRoute({
 const statementNewRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/customers/$customerId/statements/new",
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { source?: "digital" | "scan" | "jbl" | "jbl_scan" } => {
+    const s = search.source;
+    const ok = s === "digital" || s === "scan" || s === "jbl" || s === "jbl_scan";
+    return { source: ok ? (s as "digital" | "scan" | "jbl" | "jbl_scan") : undefined };
+  },
   component: function StatementNewRouteCmp() {
     const { customerId } = useParams({ strict: false });
-    return <StatementNewPage customerId={customerId!} />;
+    const { source } = statementNewRoute.useSearch();
+    return <StatementNewPage customerId={customerId!} source={source} />;
   },
 });
 
@@ -142,7 +151,15 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export const router = createRouter({ routeTree });
+// Under Electron the app is served from file://, where browser-history paths
+// don't resolve. Use hash history there; keep clean URLs on the web.
+const isFileProtocol =
+  typeof window !== "undefined" && window.location.protocol === "file:";
+
+export const router = createRouter({
+  routeTree,
+  ...(isFileProtocol ? { history: createHashHistory() } : {}),
+});
 
 declare module "@tanstack/react-router" {
   interface Register {

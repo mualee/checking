@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
+import { TransactionReview } from "@/components/TransactionReview";
 import { PageHeader, Skeleton, ErrorState, EmptyState, Spinner } from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
 
@@ -67,6 +68,16 @@ export function StatementDetailPage({
       )}
 
       <ValidationCard statement={s} />
+
+      {s.processing_status === "validation_failed" && (
+        <div className="mt-6">
+          <TransactionReview
+            customerId={customerId}
+            statementId={statementId}
+            mismatchCount={s.validation?.mismatchCount}
+          />
+        </div>
+      )}
 
       {completed && (
         <div className="mt-6 grid gap-6">

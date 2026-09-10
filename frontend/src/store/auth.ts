@@ -1,28 +1,27 @@
 import { create } from "zustand";
-import type { User as FirebaseUser } from "firebase/auth";
 import type { UserProfile } from "@/lib/types";
 
 interface AuthState {
-  /** Firebase auth user (identity). */
-  firebaseUser: FirebaseUser | null;
-  /** Backend profile (role, name) from Firestore users/{uid}. */
+  /** True once a valid local token + profile are loaded. */
+  authed: boolean;
+  /** Backend profile (role, name) from the local users store. */
   profile: UserProfile | null;
-  /** True until the initial Firebase auth state + profile fetch resolves. */
+  /** True until the initial token check + profile fetch resolves. */
   loading: boolean;
-  setFirebaseUser: (user: FirebaseUser | null) => void;
+  setAuthed: (authed: boolean) => void;
   setProfile: (profile: UserProfile | null) => void;
   setLoading: (loading: boolean) => void;
   reset: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  firebaseUser: null,
+  authed: false,
   profile: null,
   loading: true,
-  setFirebaseUser: (firebaseUser) => set({ firebaseUser }),
+  setAuthed: (authed) => set({ authed }),
   setProfile: (profile) => set({ profile }),
   setLoading: (loading) => set({ loading }),
-  reset: () => set({ firebaseUser: null, profile: null, loading: false }),
+  reset: () => set({ authed: false, profile: null, loading: false }),
 }));
 
 /** Convenience selectors. */

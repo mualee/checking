@@ -105,7 +105,6 @@ export function ApprovePage({
         ກັບຄືນ
       </Link>
       <PageHeader title="ອະນຸມັດ Statement" description={s?.file_name} />
-      // Show statement summary
       {s && (
         <Card className="mb-6">
           <CardContent className="grid grid-cols-2 gap-3 py-4 text-sm">

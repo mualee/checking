@@ -2,8 +2,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { updatePassword } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { changePassword } from "@/lib/authClient";
 import { useAuthStore } from "@/store/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +14,7 @@ import { toast } from "@/components/ui/toast";
 
 const pwSchema = z
   .object({
+    current: z.string().min(1, "ກະລຸນາໃສ່ລະຫັດຜ່ານປັດຈຸບັນ"),
     password: z.string().min(6, "ລະຫັດຜ່ານໃໝ່ຢ່າງໜ້ອຍ 6 ຕົວ"),
     confirm: z.string(),
   })
@@ -36,15 +36,14 @@ export function SettingsPage() {
   } = useForm<PwValues>({ resolver: zodResolver(pwSchema) });
 
   async function onChangePassword(values: PwValues) {
-    if (!auth.currentUser) return;
     try {
-      await updatePassword(auth.currentUser, values.password);
+      await changePassword(values.current, values.password);
       toast("ປ່ຽນລະຫັດຜ່ານສຳເລັດ", { variant: "success" });
       reset();
     } catch {
       toast("ປ່ຽນລະຫັດຜ່ານບໍ່ສຳເລັດ", {
         variant: "error",
-        description: "ອາດຕ້ອງເຂົ້າສູ່ລະບົບໃໝ່ກ່ອນປ່ຽນລະຫັດຜ່ານ",
+        description: "ລະຫັດຜ່ານປັດຈຸບັນອາດບໍ່ຖືກຕ້ອງ",
       });
     }
   }
@@ -87,6 +86,11 @@ export function SettingsPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onChangePassword)} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="current">ລະຫັດຜ່ານປັດຈຸບັນ</Label>
+                <Input id="current" type="password" autoComplete="current-password" {...register("current")} />
+                {errors.current && <p className="text-xs text-destructive">{errors.current.message}</p>}
+              </div>
               <div className="space-y-1.5">
                 <Label htmlFor="password">ລະຫັດຜ່ານໃໝ່</Label>
                 <Input id="password" type="password" {...register("password")} />

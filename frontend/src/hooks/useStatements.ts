@@ -2,6 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { Approval, Statement, Transaction } from "@/lib/types";
 
+/** Upload source: bank × medium. */
+export type UploadSource = "auto" | "digital" | "scan" | "jbl" | "jbl_scan";
+
 export function useStatements(customerId: string) {
   return useQuery({
     queryKey: ["customers", customerId, "statements"],
@@ -37,14 +40,40 @@ export function useTransactions(customerId: string, statementId: string, enabled
 export function useUploadStatement(customerId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ file, openingBalance }: { file: File; openingBalance?: string }) => {
+    mutationFn: ({
+      file,
+      openingBalance,
+      source,
+    }: {
+      file: File;
+      openingBalance?: string;
+      source?: UploadSource;
+    }) => {
       const fd = new FormData();
       fd.append("file", file);
       if (openingBalance) fd.append("opening_balance", openingBalance);
+      if (source) fd.append("source", source);
       return api.upload<Statement>(`/customers/${customerId}/statements`, fd);
     },
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: ["customers", customerId, "statements"] }),
+  });
+}
+
+export function useRevalidateStatement(customerId: string, statementId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (transactions: Transaction[]) =>
+      api.post<Statement>(
+        `/customers/${customerId}/statements/${statementId}/revalidate`,
+        { transactions },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["customers", customerId, "statements", statementId] });
+      qc.invalidateQueries({
+        queryKey: ["customers", customerId, "statements", statementId, "transactions"],
+      });
+    },
   });
 }
 

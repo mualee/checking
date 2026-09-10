@@ -1,7 +1,7 @@
 """Firestore CRUD for customers, with role-based list scoping."""
 from __future__ import annotations
 
-from firebase_admin import firestore
+from app.core import sentinels
 
 from app.core.constants import COL_CUSTOMERS, COL_STATEMENTS, CustomerStatus, UserRole
 from app.core.firebase import get_firestore_client
@@ -62,8 +62,8 @@ def create_customer(payload: CustomerCreate, created_by: str) -> CustomerOut:
         "accountNo": payload.account_no,
         "status": CustomerStatus.ACTIVE.value,
         "createdBy": created_by,  # forced to the acting user, ignoring any client value
-        "createdAt": firestore.SERVER_TIMESTAMP,
-        "updatedAt": firestore.SERVER_TIMESTAMP,
+        "createdAt": sentinels.SERVER_TIMESTAMP,
+        "updatedAt": sentinels.SERVER_TIMESTAMP,
     }
     ref = db.collection(COL_CUSTOMERS).document()
     ref.set(data)
@@ -85,6 +85,6 @@ def update_customer(cid: str, payload: CustomerUpdate) -> CustomerOut:
     if payload.status is not None:
         updates["status"] = payload.status.value
     if updates:
-        updates["updatedAt"] = firestore.SERVER_TIMESTAMP
+        updates["updatedAt"] = sentinels.SERVER_TIMESTAMP
         ref.update(updates)
     return _to_out(cid, ref.get().to_dict() or {})

@@ -11,3 +11,9 @@ pytest
 pytest-asyncio
 httpx
 reportlab
+pyjwt
+bcrypt
+pyinstaller
+# OCR for scanned/printer statement PDFs (offline). rapidocr-onnxruntime pulls in
+# onnxruntime, opencv-python, numpy, shapely, pyclipper.
+rapidocr-onnxruntime

@@ -14,3 +14,13 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
+
+interface Window {
+  /** Injected by the Electron preload in the desktop build. */
+  desktop?: {
+    isElectron: boolean;
+    platform: string;
+    /** Backend API base with the dynamically-chosen port, e.g. http://localhost:52344 */
+    apiBase: string | null;
+  };
+}

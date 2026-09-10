@@ -2,10 +2,10 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { signInWithEmailAndPassword } from "firebase/auth";
 import { useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff, ShieldCheck } from "lucide-react";
-import { auth } from "@/lib/firebase";
+import { login } from "@/lib/authClient";
+import { useAuthStore } from "@/store/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,7 +31,10 @@ export function LoginPage() {
   async function onSubmit(values: FormValues) {
     setAuthError(null);
     try {
-      await signInWithEmailAndPassword(auth, values.email, values.password);
+      await login(values.email, values.password);
+      // Mark authenticated + pending profile load; AuthProvider fetches the profile.
+      useAuthStore.getState().setLoading(true);
+      useAuthStore.getState().setAuthed(true);
       navigate({ to: "/dashboard" });
     } catch {
       setAuthError("ອີເມວ ຫຼື ລະຫັດຜ່ານບໍ່ຖືກຕ້ອງ");

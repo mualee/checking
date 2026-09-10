@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, FileText, UploadCloud, X } from "lucide-react";
+import { ArrowLeft, FileText, UploadCloud, X, Building2, Printer } from "lucide-react";
 import { useUploadStatement } from "@/hooks/useStatements";
+import { BCEL_BTN_STYLE, JBL_BTN_STYLE } from "@/pages/CustomerDetailPage";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -11,7 +12,23 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader, Spinner } from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
 
-export function StatementNewPage({ customerId }: { customerId: string }) {
+type Source = "digital" | "scan" | "jbl" | "jbl_scan";
+
+const SOURCE_LABEL: Record<Source, string> = {
+  digital: "ອັບໂຫລດ PDF ຈາກ ທະນະຄານ",
+  scan: "ອັບໂຫລດ PDF ຈາກ Printer",
+  jbl: "ອັບໂຫລດ PDF ຈາກ JBL",
+  jbl_scan: "ອັບໂຫລດ PDF ຈາກ JBL (Printer)",
+};
+const isScanSource = (s: Source) => s === "scan" || s === "jbl_scan";
+
+export function StatementNewPage({
+  customerId,
+  source: preselected,
+}: {
+  customerId: string;
+  source?: Source;
+}) {
   const navigate = useNavigate();
   const upload = useUploadStatement(customerId);
   const [file, setFile] = useState<File | null>(null);
@@ -27,15 +44,25 @@ export function StatementNewPage({ customerId }: { customerId: string }) {
     setFile(f);
   }
 
-  async function onSubmit() {
+  async function onSubmit(source: Source) {
     if (!file) return;
     try {
-      await upload.mutateAsync({
+      const s = await upload.mutateAsync({
         file,
         openingBalance: openingBalance || undefined,
+        source,
       });
-      toast("ອັບໂຫລດສຳເລັດ ກຳລັງປະມວນຜົນ", { variant: "success" });
-      navigate({ to: "/customers/$customerId", params: { customerId } });
+      toast(
+        isScanSource(source)
+          ? "ອັບໂຫລດສຳເລັດ ກຳລັງອ່ານດ້ວຍ OCR..."
+          : "ອັບໂຫລດສຳເລັດ ກຳລັງປະມວນຜົນ",
+        { variant: "success" },
+      );
+      // Processing runs in the background; the detail page polls until it's done.
+      navigate({
+        to: "/customers/$customerId/statements/$statementId",
+        params: { customerId, statementId: s.id },
+      });
     } catch (err) {
       toast("ອັບໂຫລດບໍ່ສຳເລັດ", {
         variant: "error",
@@ -114,12 +141,59 @@ export function StatementNewPage({ customerId }: { customerId: string }) {
             </p>
           </div>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <Button onClick={onSubmit} disabled={!file || upload.isPending}>
-              {upload.isPending && <Spinner />}
-              ອັບໂຫລດ ແລະ ປະມວນຜົນ
-            </Button>
-          </div>
+          {preselected ? (
+            <div className="pt-2">
+              {(() => {
+                const brand =
+                  preselected === "digital" ? BCEL_BTN_STYLE :
+                  preselected === "jbl" ? JBL_BTN_STYLE : undefined;
+                return (
+                  <Button
+                    onClick={() => onSubmit(preselected)}
+                    disabled={!file || upload.isPending}
+                    variant={isScanSource(preselected) ? "secondary" : "default"}
+                    className={"w-full " + (brand ? "border-0 text-white hover:opacity-90" : "")}
+                    style={brand}
+                  >
+                    {upload.isPending ? (
+                      <Spinner />
+                    ) : isScanSource(preselected) ? (
+                      <Printer className="size-4" />
+                    ) : (
+                      <Building2 className="size-4" />
+                    )}
+                    {SOURCE_LABEL[preselected]}
+                  </Button>
+                );
+              })()}
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-2 pt-2 sm:grid-cols-2">
+                <Button
+                  onClick={() => onSubmit("digital")}
+                  disabled={!file || upload.isPending}
+                  className="w-full border-0 text-white hover:opacity-90"
+                  style={BCEL_BTN_STYLE}
+                >
+                  {upload.isPending ? <Spinner /> : <Building2 className="size-4" />}
+                  ອັບໂຫລດ PDF ຈາກ ທະນະຄານ
+                </Button>
+                <Button
+                  onClick={() => onSubmit("scan")}
+                  disabled={!file || upload.isPending}
+                  variant="secondary"
+                  className="w-full"
+                >
+                  {upload.isPending ? <Spinner /> : <Printer className="size-4" />}
+                  ອັບໂຫລດ PDF ຈາກ Printer
+                </Button>
+              </div>
+              <p className="text-center text-xs text-muted-foreground">
+                "ຈາກ ທະນະຄານ" = PDF ທີ່ມີຂໍ້ຄວາມ (ອ່ານໄວ ແມ່ນຍຳ) · "ຈາກ Printer" = ໄຟລ໌ scan (ໃຊ້ OCR)
+              </p>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>

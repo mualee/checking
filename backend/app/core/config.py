@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -13,6 +14,14 @@ class Settings(BaseSettings):
     env: Literal["dev", "prod"] = "dev"
     gcp_project_id: str = "demo-credit-audit"
     storage_bucket: str = "demo-credit-audit.appspot.com"
+
+    # Fully-local desktop mode: no Firebase at all. Data + files persist to disk
+    # under app_data_dir, auth is a local JWT, and an admin is seeded on first run.
+    # Electron (and the dev backend) set LOCAL_MODE=1 and APP_DATA_DIR=<userData>.
+    local_mode: bool = False
+    # Where persistent data lives (Firestore JSON, uploaded files, secrets).
+    # Electron passes the OS per-user app data dir; falls back to ./.localdata.
+    app_data_dir: str | None = None
 
     # Firestore backend for dev: "emulator" (Java service) or "memory" (in-process shim).
     # Use "memory" on hosts where the Java Firestore emulator can't start.
@@ -39,6 +48,13 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def data_path(self) -> Path:
+        """Resolved local data directory (created on access)."""
+        base = Path(self.app_data_dir) if self.app_data_dir else Path.cwd() / ".localdata"
+        base.mkdir(parents=True, exist_ok=True)
+        return base
 
 
 @lru_cache

@@ -299,17 +299,24 @@ function TransactionsCard({
 
 function ReportButton({ customerId, statementId }: { customerId: string; statementId: string }) {
   const report = useDownloadReport(customerId, statementId);
-  async function download() {
+  async function download(format: "pdf" | "docx") {
     try {
-      await report.mutateAsync();
+      await report.mutateAsync(format);
     } catch {
       toast("ດາວໂຫລດບໍ່ສຳເລັດ", { variant: "error" });
     }
   }
+  const pending = report.isPending ? report.variables : undefined;
   return (
-    <Button variant="outline" onClick={download} disabled={report.isPending}>
-      {report.isPending ? <Spinner /> : <Download className="size-4" />}
-      ດາວໂຫລດ Word
-    </Button>
+    <div className="flex gap-2">
+      <Button variant="outline" onClick={() => download("pdf")} disabled={report.isPending}>
+        {pending === "pdf" ? <Spinner /> : <Download className="size-4" />}
+        ດາວໂຫລດ PDF
+      </Button>
+      <Button variant="outline" onClick={() => download("docx")} disabled={report.isPending}>
+        {pending === "docx" ? <Spinner /> : <Download className="size-4" />}
+        ດາວໂຫລດ Word
+      </Button>
+    </div>
   );
 }

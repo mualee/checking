@@ -108,14 +108,14 @@ export function useApproveStatement(customerId: string, statementId: string) {
 
 export function useDownloadReport(customerId: string, statementId: string) {
   return useMutation({
-    mutationFn: async () => {
-      const blob = await api.getBlob(
-        `/customers/${customerId}/statements/${statementId}/report/file`
+    mutationFn: async (format: "pdf" | "docx" = "pdf") => {
+      const { blob, filename } = await api.getBlob(
+        `/customers/${customerId}/statements/${statementId}/report/file?format=${format}`
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = "report.docx";
+      a.download = filename || "report.pdf";
       document.body.appendChild(a);
       a.click();
       a.remove();

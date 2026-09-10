@@ -17,6 +17,7 @@ from app.services import statement_service
 from app.services.audit_service import write_audit_log
 from app.services.calculations import build_table1, build_table2, build_table3, validate_balances
 from app.services.docx_report import generate_statement_report
+from app.services.pdf_report import generate_statement_report_pdf
 from app.services.pdf_extraction import PDFExtractionError, extract_transactions_from_pdf
 from app.services.storage_service import upload_bytes, upload_json
 from app.utils.money import to_storage_number
@@ -197,16 +198,20 @@ def process_transactions(
         validation=validation, table1=table1, table2=table2, table3=table3,
     )
 
-    # Step 8: Word report -> Storage
-    report_bytes = generate_statement_report(
+    # Step 8: report -> Storage, in both PDF and Word (user picks the format).
+    report_args = dict(
         customer_name=customer_name, account_no=account_no,
         period=f"{period_start} - {period_end}",
         table1=table1, table2=table2, table3=table3, validation=validation,
     )
-    report_path = f"{prefix}/report.docx"
-    upload_bytes(report_path, report_bytes,
-                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
-    statement_service.save_report_path(customer_id, statement_id, report_path)
+    pdf_path = f"{prefix}/report.pdf"
+    upload_bytes(pdf_path, generate_statement_report_pdf(**report_args), "application/pdf")
+    upload_bytes(
+        f"{prefix}/report.docx", generate_statement_report(**report_args),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    # reportStoragePath is the PDF (primary); the .docx sibling shares the prefix.
+    statement_service.save_report_path(customer_id, statement_id, pdf_path)
 
     # Step 9: completed + audit
     statement_service.set_status(customer_id, statement_id, ProcessingStatus.COMPLETED)

@@ -1,6 +1,9 @@
 """Statement endpoints: upload+process, detail, transactions, report, approve."""
 from __future__ import annotations
 
+import datetime as _dt
+import re
+import urllib.parse
 from decimal import Decimal
 from typing import Annotated
 
@@ -42,8 +45,6 @@ from app.services.storage_service import (
 )
 from app.core.config import get_settings
 from app.core import sentinels
-
-DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 router = APIRouter(prefix="/customers/{customer_id}/statements", tags=["statements"])
 
@@ -209,29 +210,76 @@ async def get_report(customer_id: str, statement_id: str, user: CurrentUser) -> 
     return {"url": None, "mode": "stream"}
 
 
+_REPORT_MEDIA = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
 @router.get("/{statement_id}/report/file")
-async def download_report_file(customer_id: str, statement_id: str, user: CurrentUser) -> Response:
+async def download_report_file(
+    customer_id: str,
+    statement_id: str,
+    user: CurrentUser,
+    format: str = "pdf",
+) -> Response:
+    """Download the report as PDF (default) or Word — `?format=pdf|docx`. Both are
+    generated at processing time and share the storage prefix; if the requested one
+    is missing (e.g. a statement processed before both formats existed) we fall back
+    to whatever `reportStoragePath` points at."""
     db = get_firestore_client()
     customer_snap = assert_can_access_customer(db, user, customer_id)
     snap = _load_statement_or_404(customer_id, statement_id)
     data = snap.to_dict() or {}
     assert_can_access_statement(db, user, customer_id, data, customer_snap)
-    report_path = data.get("reportStoragePath")
-    if not report_path:
+    stored = data.get("reportStoragePath")
+    if not stored:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="report not available")
-    try:
-        content = download_bytes(report_path)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="report file missing") from exc
+
+    fmt = format.lower()
+    if fmt not in _REPORT_MEDIA:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="format must be pdf or docx")
+    # The sibling path in the requested format (same prefix, swapped extension).
+    wanted = stored.rsplit(".", 1)[0] + "." + fmt
+    for path in (wanted, stored):
+        try:
+            content = download_bytes(path)
+            report_path = path
+            break
+        except Exception:  # noqa: BLE001, PERF203 — try the fallback next
+            continue
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="report file missing")
+
     write_audit_log(user_id=user.uid, user_email=user.email, action=AuditAction.DOWNLOAD,
                     target_type=AuditTargetType.STATEMENT, target_id=statement_id,
                     details={"reportPath": report_path})
-    filename = (data.get("fileName") or "report").rsplit(".", 1)[0] + ".docx"
+    # Name the download <customer>_<date>.<ext>, by the file we actually serve.
+    customer_data = customer_snap.to_dict() or {}
+    ext = ".docx" if report_path.lower().endswith(".docx") else ".pdf"
+    media_type = _REPORT_MEDIA["docx" if ext == ".docx" else "pdf"]
+    filename = _report_filename(customer_data.get("fullName"),
+                                data.get("reportGeneratedAt") or data.get("uploadedAt"))
+    ascii_name = (re.sub(r"[^A-Za-z0-9._-]+", "_", filename).strip("_") or "report") + ext
+    disposition = (
+        f'attachment; filename="{ascii_name}"; '
+        f"filename*=UTF-8''{urllib.parse.quote(filename + ext)}"
+    )
     return Response(
         content=content,
-        media_type=DOCX_MIME,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        media_type=media_type,
+        headers={"Content-Disposition": disposition},
     )
+
+
+def _report_filename(customer_name: str | None, dt_raw) -> str:
+    """<customer name>_<DD-MM-YYYY> (no extension), sanitized for a filename."""
+    name = re.sub(r'[\\/:*?"<>|\r\n\t]+', "", (customer_name or "report").strip()) or "report"
+    try:
+        date_str = _dt.datetime.fromisoformat(str(dt_raw).replace("Z", "+00:00")).strftime("%d-%m-%Y")
+    except (ValueError, TypeError):
+        date_str = _dt.date.today().strftime("%d-%m-%Y")
+    return f"{name}_{date_str}"
 
 
 @router.get("/{statement_id}/approvals", response_model=list[ApprovalOut])

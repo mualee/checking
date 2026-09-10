@@ -9,6 +9,7 @@ google-cloud stack are excluded: the local build never initializes Firebase.
 """
 from __future__ import annotations
 
+import os
 import shutil
 from pathlib import Path
 
@@ -16,6 +17,8 @@ import PyInstaller.__main__
 
 HERE = Path(__file__).resolve().parent
 ENTRY = HERE / "run_server.py"
+# Lao TTF bundled for the PDF report (reportlab needs the file at runtime).
+REPORT_FONT = HERE / "app" / "assets" / "fonts" / "PhetsarathOT.ttf"
 
 
 def build() -> None:
@@ -37,6 +40,8 @@ def build() -> None:
         "--collect-all=pdfminer",
         "--collect-all=reportlab",
         "--collect-all=docx",
+        # Lao font for the PDF report -> _internal/app/assets/fonts/.
+        f"--add-data={REPORT_FONT}{os.pathsep}app/assets/fonts",
         # OCR stack for scanned PDFs (bundles the ONNX models + native libs).
         "--collect-all=rapidocr_onnxruntime",
         "--collect-all=onnxruntime",

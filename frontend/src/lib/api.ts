@@ -66,14 +66,29 @@ function safeJson(text: string): unknown {
   }
 }
 
-async function getBlob(path: string): Promise<Blob> {
+async function getBlob(path: string): Promise<{ blob: Blob; filename: string | null }> {
   const headers = await authHeader();
   const res = await fetch(`${API_BASE}${path}`, { headers });
   if (!res.ok) {
     const text = await res.text();
     throw new ApiError(res.status, text, res.statusText);
   }
-  return res.blob();
+  return { blob: await res.blob(), filename: parseFilename(res.headers.get("Content-Disposition")) };
+}
+
+/** Pull the download name from Content-Disposition, preferring RFC 5987 filename*. */
+function parseFilename(header: string | null): string | null {
+  if (!header) return null;
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1]);
+    } catch {
+      /* fall through to the plain filename */
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain ? plain[1] : null;
 }
 
 export const api = {

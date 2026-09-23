@@ -22,5 +22,11 @@ interface Window {
     platform: string;
     /** Backend API base with the dynamically-chosen port, e.g. http://localhost:52344 */
     apiBase: string | null;
+    /** Save bytes to a user-chosen path via the main process (reliable everywhere,
+     * unlike a blob <a download> which fails on "Save as…" outside Downloads). */
+    saveFile?: (
+      fileName: string,
+      data: Uint8Array,
+    ) => Promise<{ ok: boolean; canceled?: boolean; path?: string; error?: string }>;
   };
 }

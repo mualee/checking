@@ -27,6 +27,8 @@ def create_app() -> FastAPI:
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
+            # So the report download can read the server-provided filename.
+            expose_headers=["Content-Disposition"],
         )
     else:
         app.add_middleware(
@@ -35,6 +37,7 @@ def create_app() -> FastAPI:
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
+            expose_headers=["Content-Disposition"],
         )
 
     app.include_router(health.router)

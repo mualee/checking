@@ -34,6 +34,9 @@ from app.models.approval import ApprovalCreate, ApprovalOut
 from app.models.statement import StatementOut
 from app.services import statement_service
 from app.services.audit_service import write_audit_log
+from app.services.calculations import build_table1, build_table2, build_table3, validate_balances
+from app.services.docx_report import generate_statement_report
+from app.services.pdf_report import generate_statement_report_pdf
 from app.models.transaction import TransactionRow
 from app.services.pipeline import process_transactions, run_statement_pipeline
 from app.services.storage_service import (
@@ -239,23 +242,31 @@ async def download_report_file(
     fmt = format.lower()
     if fmt not in _REPORT_MEDIA:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="format must be pdf or docx")
+    customer_data = customer_snap.to_dict() or {}
+
     # The sibling path in the requested format (same prefix, swapped extension).
     wanted = stored.rsplit(".", 1)[0] + "." + fmt
-    for path in (wanted, stored):
-        try:
-            content = download_bytes(path)
-            report_path = path
-            break
-        except Exception:  # noqa: BLE001, PERF203 — try the fallback next
-            continue
-    else:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="report file missing")
+    try:
+        content = download_bytes(wanted)
+        report_path = wanted
+    except Exception:  # noqa: BLE001 — not generated yet; build it on demand below
+        content = _build_report_in_format(customer_id, statement_id, fmt, data, customer_data)
+        if content is not None:
+            upload_bytes(wanted, content, _REPORT_MEDIA[fmt])  # cache for next time
+            report_path = wanted
+        else:
+            # Couldn't regenerate (e.g. no stored transactions) — serve what exists.
+            try:
+                content = download_bytes(stored)
+                report_path = stored
+            except Exception as exc:  # noqa: BLE001
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                    detail="report file missing") from exc
 
     write_audit_log(user_id=user.uid, user_email=user.email, action=AuditAction.DOWNLOAD,
                     target_type=AuditTargetType.STATEMENT, target_id=statement_id,
                     details={"reportPath": report_path})
     # Name the download <customer>_<date>.<ext>, by the file we actually serve.
-    customer_data = customer_snap.to_dict() or {}
     ext = ".docx" if report_path.lower().endswith(".docx") else ".pdf"
     media_type = _REPORT_MEDIA["docx" if ext == ".docx" else "pdf"]
     filename = _report_filename(customer_data.get("fullName"),
@@ -272,9 +283,48 @@ async def download_report_file(
     )
 
 
+def _build_report_in_format(
+    customer_id: str, statement_id: str, fmt: str, data: dict, customer_data: dict,
+) -> bytes | None:
+    """Regenerate the report in `fmt` from the stored transactions.json, so a format
+    that didn't exist yet (statements processed before both formats were emitted) can
+    still be downloaded. Returns None if the transactions aren't available."""
+    try:
+        rows = download_json(f"statements/{customer_id}/{statement_id}/transactions.json")
+        transactions = [TransactionRow.from_json_dict(r) for r in rows]
+    except Exception:  # noqa: BLE001
+        return None
+    if not transactions:
+        return None
+
+    ob_raw = data.get("openingBalance")
+    if ob_raw in (None, ""):
+        first = transactions[0]
+        opening = first.balance - first.credit + first.debit
+    else:
+        opening = Decimal(str(ob_raw))
+
+    args = dict(
+        customer_name=customer_data.get("fullName", ""),
+        account_no=customer_data.get("accountNo", ""),
+        period=f"{data.get('periodStart', '')} - {data.get('periodEnd', '')}".strip(" -"),
+        table1=build_table1(transactions),
+        table2=build_table2(transactions),
+        table3=build_table3(transactions),
+        validation=validate_balances(transactions, opening),
+    )
+    return generate_statement_report_pdf(**args) if fmt == "pdf" else generate_statement_report(**args)
+
+
 def _report_filename(customer_name: str | None, dt_raw) -> str:
-    """<customer name>_<DD-MM-YYYY> (no extension), sanitized for a filename."""
+    """<customer name>_<DD-MM-YYYY> (no extension), sanitized for a filename.
+
+    Whitespace is collapsed to underscores: the Windows "Save as…" dialog tokenizes
+    a spaced filename into several names and then rejects it ("file not found"), so a
+    space-free suggested name is what makes saving outside Downloads work.
+    """
     name = re.sub(r'[\\/:*?"<>|\r\n\t]+', "", (customer_name or "report").strip()) or "report"
+    name = re.sub(r"\s+", "_", name)
     try:
         date_str = _dt.datetime.fromisoformat(str(dt_raw).replace("Z", "+00:00")).strftime("%d-%m-%Y")
     except (ValueError, TypeError):

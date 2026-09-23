@@ -112,14 +112,26 @@ export function useDownloadReport(customerId: string, statementId: string) {
       const { blob, filename } = await api.getBlob(
         `/customers/${customerId}/statements/${statementId}/report/file?format=${format}`
       );
+      const name = filename || `report.${format}`;
+
+      // Desktop: hand the bytes to the main process, which writes them to the
+      // user-chosen path via Node fs — a renderer blob <a download> fails on
+      // "Save as…" to folders other than Downloads.
+      if (window.desktop?.saveFile) {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        await window.desktop.saveFile(name, bytes);
+        return;
+      }
+
+      // Web build: standard blob download.
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = filename || "report.pdf";
+      a.download = name;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     },
   });
 }

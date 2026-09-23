@@ -7,7 +7,7 @@
 // dev servers never collide. The chosen backend URL is handed to the renderer via
 // the preload (--api-base=...). A single-instance lock prevents two copies writing
 // the same data dir at once.
-const { app, BrowserWindow, shell, dialog } = require("electron");
+const { app, BrowserWindow, shell, dialog, ipcMain } = require("electron");
 const path = require("node:path");
 const http = require("node:http");
 const net = require("node:net");
@@ -134,6 +134,30 @@ function stopBackend() {
     backendProc = null;
   }
 }
+
+// Save bytes handed over from the renderer to a user-chosen path. Using Node fs
+// here (rather than a renderer blob download) makes "Save as…" reliable to any
+// folder, not just Downloads.
+ipcMain.handle("save-file", async (_event, { fileName, data }) => {
+  try {
+    const win = BrowserWindow.getFocusedWindow() || mainWindow;
+    const safeName = (fileName || "report").replace(/\s+/g, "_");
+    const ext = (path.extname(safeName).slice(1) || "pdf").toLowerCase();
+    const result = await dialog.showSaveDialog(win, {
+      defaultPath: path.join(app.getPath("downloads"), safeName),
+      filters: [
+        { name: ext.toUpperCase(), extensions: [ext] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+      properties: ["createDirectory", "showOverwriteConfirmation"],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    await fs.promises.writeFile(result.filePath, Buffer.from(data));
+    return { ok: true, path: result.filePath };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+});
 
 function createWindow(startUrl, apiBase) {
   mainWindow = new BrowserWindow({

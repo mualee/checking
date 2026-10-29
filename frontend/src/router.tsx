@@ -21,6 +21,10 @@ import { AuditLogsPage } from "@/pages/AuditLogsPage";
 import { UsersPage } from "@/pages/UsersPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 
+/** Upload sources selectable from the UI (excludes the internal "auto"). */
+type UploadSourceParam =
+  | "digital" | "scan" | "jbl" | "jbl_scan" | "jdb" | "jdb_scan" | "ldb" | "ldb_scan";
+
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
 });
@@ -84,12 +88,12 @@ const customerDetailRoute = createRoute({
 const statementNewRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: "/customers/$customerId/statements/new",
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): { source?: "digital" | "scan" | "jbl" | "jbl_scan" } => {
+  validateSearch: (search: Record<string, unknown>): { source?: UploadSourceParam } => {
     const s = search.source;
-    const ok = s === "digital" || s === "scan" || s === "jbl" || s === "jbl_scan";
-    return { source: ok ? (s as "digital" | "scan" | "jbl" | "jbl_scan") : undefined };
+    const valid: UploadSourceParam[] = [
+      "digital", "scan", "jbl", "jbl_scan", "jdb", "jdb_scan", "ldb", "ldb_scan",
+    ];
+    return { source: valid.includes(s as UploadSourceParam) ? (s as UploadSourceParam) : undefined };
   },
   component: function StatementNewRouteCmp() {
     const { customerId } = useParams({ strict: false });

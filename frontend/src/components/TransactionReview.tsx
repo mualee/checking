@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, Save } from "lucide-react";
+import { AlertTriangle, Save, Plus, Trash2 } from "lucide-react";
 import { useTransactions, useRevalidateStatement } from "@/hooks/useStatements";
 import type { Transaction } from "@/lib/types";
 import { Button } from "@/components/ui/button";
@@ -70,12 +70,38 @@ export function TransactionReview({
   if (isLoading) return <Skeleton className="h-64 w-full" />;
   if (!current) return null;
 
+  function withRows(fn: (rows: Row[]) => Row[]) {
+    setRows((prevRows) => fn((prevRows ?? toRows(data ?? [])).slice()));
+  }
+
   function edit(i: number, field: keyof Row, value: string) {
-    setRows((prevRows) => {
-      const base = prevRows ?? toRows(data ?? []);
-      const next = base.slice();
-      next[i] = { ...next[i], [field]: value };
-      return next;
+    withRows((rs) => {
+      rs[i] = { ...rs[i], [field]: value };
+      return rs;
+    });
+  }
+
+  // OCR can miss a whole transaction; let the reviewer insert one (seeded with the
+  // previous row's date to save typing) or delete a spurious one.
+  function insertAfter(i: number) {
+    withRows((rs) => {
+      const prev = rs[i];
+      rs.splice(i + 1, 0, {
+        date: prev?.date ?? "",
+        txnNumber: "",
+        description: "",
+        debit: "0",
+        credit: "0",
+        balance: prev?.balance ?? "0",
+      });
+      return rs;
+    });
+  }
+
+  function removeRow(i: number) {
+    withRows((rs) => {
+      rs.splice(i, 1);
+      return rs;
     });
   }
 
@@ -131,6 +157,7 @@ export function TransactionReview({
                 <TableHead className="text-right">ໜີ້</TableHead>
                 <TableHead className="text-right">ມີ</TableHead>
                 <TableHead className="text-right">ຍອດຄົງເຫຼືອ</TableHead>
+                <TableHead className="w-20 text-center">ຈັດການ</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -167,11 +194,43 @@ export function TransactionReview({
                         />
                       </TableCell>
                     ))}
+                    <TableCell>
+                      <div className="flex justify-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          title="ເພີ່ມແຖວໃໝ່ຂ້າງລຸ່ມ"
+                          onClick={() => insertAfter(i)}
+                        >
+                          <Plus className="size-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-7 text-destructive hover:text-destructive"
+                          title="ລຶບແຖວນີ້"
+                          onClick={() => removeRow(i)}
+                        >
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 );
               })}
             </TableBody>
           </Table>
+        </div>
+        <div className="mt-3">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => insertAfter(current.length - 1)}
+          >
+            <Plus className="size-4" />
+            ເພີ່ມແຖວ
+          </Button>
         </div>
       </CardContent>
     </Card>

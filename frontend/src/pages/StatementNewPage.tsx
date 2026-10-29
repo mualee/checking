@@ -2,7 +2,12 @@ import { useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, FileText, UploadCloud, X, Building2, Printer } from "lucide-react";
 import { useUploadStatement } from "@/hooks/useStatements";
-import { BCEL_BTN_STYLE, JBL_BTN_STYLE } from "@/pages/CustomerDetailPage";
+import {
+  BCEL_BTN_STYLE,
+  JBL_BTN_STYLE,
+  JDB_BTN_STYLE,
+  LDB_BTN_STYLE,
+} from "@/pages/CustomerDetailPage";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -12,15 +17,20 @@ import { Card, CardContent } from "@/components/ui/card";
 import { PageHeader, Spinner } from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
 
-type Source = "digital" | "scan" | "jbl" | "jbl_scan";
+type Source =
+  | "digital" | "scan" | "jbl" | "jbl_scan" | "jdb" | "jdb_scan" | "ldb" | "ldb_scan";
 
 const SOURCE_LABEL: Record<Source, string> = {
-  digital: "ອັບໂຫລດ PDF ຈາກ ທະນະຄານ",
-  scan: "ອັບໂຫລດ PDF ຈາກ Printer",
+  digital: "ອັບໂຫລດ PDF ຈາກ BcelOne",
+  scan: "ອັບໂຫລດ PDF ຈາກ BcelOne (Printer)",
   jbl: "ອັບໂຫລດ PDF ຈາກ JBL",
   jbl_scan: "ອັບໂຫລດ PDF ຈາກ JBL (Printer)",
+  jdb: "ອັບໂຫລດ PDF ຈາກ JDB",
+  jdb_scan: "ອັບໂຫລດ PDF ຈາກ JDB (Printer)",
+  ldb: "ອັບໂຫລດ PDF ຈາກ LDB",
+  ldb_scan: "ອັບໂຫລດ PDF ຈາກ LDB (Printer)",
 };
-const isScanSource = (s: Source) => s === "scan" || s === "jbl_scan";
+const isScanSource = (s: Source) => s.endsWith("_scan") || s === "scan";
 
 export function StatementNewPage({
   customerId,
@@ -146,7 +156,9 @@ export function StatementNewPage({
               {(() => {
                 const brand =
                   preselected === "digital" ? BCEL_BTN_STYLE :
-                  preselected === "jbl" ? JBL_BTN_STYLE : undefined;
+                  preselected === "jbl" ? JBL_BTN_STYLE :
+                  preselected === "jdb" ? JDB_BTN_STYLE :
+                  preselected === "ldb" ? LDB_BTN_STYLE : undefined;
                 return (
                   <Button
                     onClick={() => onSubmit(preselected)}

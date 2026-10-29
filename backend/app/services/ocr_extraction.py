@@ -30,9 +30,13 @@ from app.utils.money import AmountParseError, parse_lao_amount
 
 logger = logging.getLogger("app.ocr")
 
-RENDER_DPI = 150
-# Table body occupies this vertical fraction of the page (below the header block).
+RENDER_DPI = 220  # higher DPI -> sharper glyphs -> fewer digit misreads
+# Table body occupies this vertical fraction of the page. The first page carries the
+# tall account-info header, so its body starts lower; continuation pages start with
+# only the thin column-header row, so cropping 0.27 there would drop the first several
+# transactions.
 BODY_TOP, BODY_BOTTOM = 0.27, 0.97
+CONT_BODY_TOP = 0.04  # continuation pages (no account header)
 # Fallback column boundaries as a fraction of page width (from the BCEL template):
 # [left, date|num, num|desc, desc|debit, debit|credit, credit|balance, right].
 FALLBACK_XR = [0.056, 0.131, 0.267, 0.597, 0.706, 0.818, 0.935]
@@ -80,13 +84,13 @@ def _render_page(page) -> np.ndarray:
     return np.array(pil)[:, :, ::-1].copy()  # RGB -> BGR for cv2
 
 
-def _column_lines(gray: np.ndarray) -> list[int]:
+def _column_lines(gray: np.ndarray, body_top: float = BODY_TOP) -> list[int]:
     """Detect vertical grid lines; fall back to template proportions if too few."""
     import cv2
 
     h, w = gray.shape
     th = cv2.adaptiveThreshold(~gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 15, -2)
-    band = th[int(h * BODY_TOP):int(h * BODY_BOTTOM), :]
+    band = th[int(h * body_top):int(h * BODY_BOTTOM), :]
     vk = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(8, band.shape[0] // 25)))
     vert = cv2.dilate(cv2.erode(band, vk), vk)
     thr = band.shape[0] * 0.25 * 255
@@ -125,14 +129,15 @@ def _normalize_amount(text: str) -> str:
     return t.replace(".", "").replace(",", "")
 
 
-def _page_transactions(engine, page, layout: str = "bcel") -> list[TransactionRow]:
+def _page_transactions(engine, page, layout: str = "bcel", first_page: bool = True) -> list[TransactionRow]:
     import cv2
 
     img = _render_page(page)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    lines = _column_lines(gray)
+    body_top = BODY_TOP if first_page else CONT_BODY_TOP
+    lines = _column_lines(gray, body_top)
     h = gray.shape[0]
-    top, bottom = int(h * BODY_TOP), int(h * BODY_BOTTOM)
+    top, bottom = int(h * body_top), int(h * BODY_BOTTOM)
     x0, right = lines[0], lines[-1]
 
     result, _ = engine(img[top:bottom, x0:right])
@@ -144,8 +149,11 @@ def _page_transactions(engine, page, layout: str = "bcel") -> list[TransactionRo
     # MARUHAN/JBL: Teller's ID is rightmost, so balance is second from the right.
     b = [x - x0 for x in lines]
     date_x = (b[0], b[1])
-    if layout == "maruhan":
-        numdesc_x = (b[1], b[-5])
+    if layout in ("maruhan", "jdb"):
+        # Both have a non-amount id column on the right, so the money columns are the
+        # 4th–2nd rules from the right. JDB's description sits after Bill No + Code, so
+        # its text column starts further in than MARUHAN's.
+        numdesc_x = (b[3] if layout == "jdb" and len(b) >= 6 else b[1], b[-5])
         debit_x = (b[-5], b[-4])
         credit_x = (b[-4], b[-3])
         balance_x = (b[-3], b[-2])
@@ -175,21 +183,34 @@ def _page_transactions(engine, page, layout: str = "bcel") -> list[TransactionRo
                         amount_toks[name].append((y, norm))
                         break
 
-    dates = sorted((y, t) for (y, t) in date_toks if _looks_like_date(t))
-    if not dates:
+    # Anchor one row per balance token: every transaction prints a running balance,
+    # so a row survives even when its date column doesn't OCR as a valid date (which
+    # otherwise silently drops the whole transaction). The date is matched to the row
+    # by y and forward-filled from the last good date when this row's didn't read.
+    bal_rows = sorted(amount_toks["balance"])
+    if not bal_rows:
         return []
-    ys = [y for (y, _t) in dates]
+    row_ys = [y for (y, _t) in bal_rows]
+    gaps = sorted(row_ys[i + 1] - row_ys[i] for i in range(len(row_ys) - 1))
+    tol = max(10.0, (gaps[len(gaps) // 2] * 0.5) if gaps else 40.0)
 
-    def by_row(col: str) -> dict[int, str]:
-        best: dict[int, tuple[int, str]] = {}
-        for (y, t) in amount_toks[col]:
-            i = min(range(len(ys)), key=lambda k: abs(y - ys[k]))
-            d = abs(y - ys[i])
-            if i not in best or d < best[i][0]:
-                best[i] = (d, t)
-        return {i: v[1] for i, v in best.items()}
+    valid_dates = sorted((y, t.replace(" ", "")) for (y, t) in date_toks if _looks_like_date(t))
 
-    debit_by, credit_by, balance_by = by_row("debit"), by_row("credit"), by_row("balance")
+    def nearest(col: str, y: int) -> str:
+        best_t, best_d = "", tol
+        for (ty, t) in amount_toks[col]:
+            d = abs(ty - y)
+            if d <= best_d:
+                best_d, best_t = d, t
+        return best_t
+
+    def date_at(y: int) -> str:
+        best_t, best_d = "", tol
+        for (ty, t) in valid_dates:
+            d = abs(ty - y)
+            if d <= best_d:
+                best_d, best_t = d, t
+        return best_t
 
     def num_desc(y0: int, y1: int) -> tuple[str, str]:
         num, parts = "", []
@@ -203,24 +224,30 @@ def _page_transactions(engine, page, layout: str = "bcel") -> list[TransactionRo
         return num, " ".join(parts).strip()
 
     txns: list[TransactionRow] = []
-    for idx, (y0, dtext) in enumerate(dates):
-        y1 = ys[idx + 1] if idx + 1 < len(ys) else bottom
+    last_date = ""
+    for idx, (y0, btext) in enumerate(bal_rows):
+        y1 = row_ys[idx + 1] if idx + 1 < len(row_ys) else bottom
+        date = date_at(y0)
+        if date:
+            last_date = date
+        else:
+            date = last_date
         num, desc = num_desc(y0, y1)
         try:
-            debit = parse_lao_amount(debit_by.get(idx, ""), default_zero=True)
-            credit = parse_lao_amount(credit_by.get(idx, ""), default_zero=True)
-            balance = parse_lao_amount(balance_by.get(idx, ""), default_zero=False)
+            debit = parse_lao_amount(nearest("debit", y0), default_zero=True)
+            credit = parse_lao_amount(nearest("credit", y0), default_zero=True)
+            balance = parse_lao_amount(btext, default_zero=False)
         except AmountParseError:
             debit = credit = balance = 0
+        # Skip non-transaction lines: the opening-balance line (a balance with no
+        # date and no movement), and the totals / summary block printed under the
+        # table (rows with neither a bill number nor a description — a real
+        # transaction always carries a bill number).
+        if (not date and debit == 0 and credit == 0) or (not num and not desc):
+            continue
         txns.append(
-            TransactionRow(
-                date=dtext.replace(" ", ""),
-                txn_number=num,
-                description=desc,
-                debit=debit,
-                credit=credit,
-                balance=balance,
-            )
+            TransactionRow(date=date, txn_number=num, description=desc,
+                           debit=debit, credit=credit, balance=balance)
         )
     return txns
 
@@ -235,6 +262,92 @@ def extract_transactions_via_ocr(pdf_bytes: bytes, layout: str = "bcel") -> list
     engine = _get_engine()
     out: list[TransactionRow] = []
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-        for page in pdf.pages:
-            out.extend(_page_transactions(engine, page, layout))
-    return out
+        for i, page in enumerate(pdf.pages):
+            out.extend(_page_transactions(engine, page, layout, first_page=(i == 0)))
+    out = _drop_trailing_summary(out, layout)
+    # Cross-page date fill: the per-page pass resets at each page, so a row at the top
+    # of a page whose date didn't OCR inherits the previous row's date here.
+    last = ""
+    for i, r in enumerate(out):
+        if r.date:
+            last = r.date
+        elif last:
+            out[i] = r.model_copy(update={"date": last})
+    return _reconcile_amounts(out)
+
+
+def ocr_page(page, layout: str = "bcel", first_page: bool = True) -> list[TransactionRow]:
+    """OCR a single already-open pdfplumber page.
+
+    Used to fill in scanned (image-only) pages inside an otherwise-digital PDF: the
+    digital parser calls this for pages with no text layer, then reconciles the merged
+    set. Loads the OCR engine lazily (and caches it) like the full-document path.
+    """
+    return _page_transactions(_get_engine(), page, layout, first_page)
+
+
+def reconcile_amounts(rows: list[TransactionRow]) -> list[TransactionRow]:
+    """Public wrapper: balance-based auto-correction over a (possibly mixed) row set."""
+    return _reconcile_amounts(rows)
+
+
+def _drop_trailing_summary(rows: list[TransactionRow], layout: str) -> list[TransactionRow]:
+    """Drop the totals / summary block printed under the table on the last page.
+
+    For banks that print a bill number on every transaction (BCEL, JDB) those rows
+    are the trailing ones with no bill number — the OCR can still pick up the Lao
+    summary labels as a description, so an empty-description test isn't enough. We cut
+    only the trailing no-bill rows, leaving any mid-statement rows untouched.
+    """
+    if layout not in ("bcel", "jdb"):
+        return rows
+    last_real = -1
+    for i, r in enumerate(rows):
+        if r.txn_number:
+            last_real = i
+    return rows[: last_real + 1] if last_real >= 0 else rows
+
+
+def _reconcile_amounts(rows: list[TransactionRow]) -> list[TransactionRow]:
+    """Auto-correct debit/credit misreads using the running balance as ground truth.
+
+    The balance column is the most reliably OCR'd (right-aligned, fixed 2dp format).
+    When a row's OCR'd debit/credit don't match the balance movement, but the balance
+    column is internally consistent across its neighbours, the movement is derived
+    from the balance delta (positive -> credit, negative -> debit). Balance-column
+    misreads are left for the human review step. This measurably cuts the number of
+    rows a reviewer must fix without touching the digital paths.
+    """
+    from decimal import Decimal
+
+    tol = Decimal("0.005")
+    n = len(rows)
+
+    def consistent(prev_bal: Decimal, r: TransactionRow) -> bool:
+        return abs((r.balance - prev_bal) - (r.credit - r.debit)) <= tol
+
+    for i in range(1, n):
+        prev_bal = rows[i - 1].balance
+        cur = rows[i]
+        if consistent(prev_bal, cur):
+            continue
+        # Only trust the balance column here if the *next* row reconciles against
+        # cur.balance — a misread balance would break that neighbour too.
+        trust_balance = True
+        if i + 1 < n:
+            trust_balance = consistent(cur.balance, rows[i + 1])
+        if not trust_balance:
+            # The balance itself looks misread. If the OCR'd debit/credit instead
+            # reconcile the next row, derive the balance from them.
+            if i + 1 < n:
+                cand = prev_bal + (cur.credit - cur.debit)
+                if consistent(cand, rows[i + 1]):
+                    rows[i] = cur.model_copy(update={"balance": cand})
+            continue
+        delta = cur.balance - prev_bal
+        credit = delta if delta >= 0 else Decimal("0")
+        debit = -delta if delta < 0 else Decimal("0")
+        if credit == cur.credit and debit == cur.debit:
+            continue
+        rows[i] = cur.model_copy(update={"debit": debit, "credit": credit})
+    return rows

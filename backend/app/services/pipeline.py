@@ -35,12 +35,14 @@ def _extract(pdf_bytes: bytes, source: str):
       - digital PDF (has a text layer)  -> pdfplumber table extraction
       - scanned/printer PDF (image only) -> offline OCR
 
-    Sources — two banks × two media:
+    Sources — three banks × two media:
       "digital"  BCEL digital  -> pdfplumber (BCEL layout)
       "scan"     BCEL printer  -> OCR (BCEL layout)
       "jbl"      JBL digital   -> pdfplumber (MARUHAN layout)
       "jbl_scan" JBL printer   -> OCR (MARUHAN layout)
-      "auto"     try BCEL digital, then JBL digital, then OCR.
+      "jdb"      JDB digital   -> pdfplumber (JDB layout)
+      "jdb_scan" JDB printer   -> OCR (JDB layout)
+      "auto"     try BCEL digital, then JBL, then JDB digital, then OCR.
     OCR (onnxruntime/opencv) is imported lazily so digital paths never load it.
     """
     # Explicit digital banks: straight to their text parser (fastest, no OCR).
@@ -49,21 +51,29 @@ def _extract(pdf_bytes: bytes, source: str):
     if source == "jbl":
         from app.services.maruhan_extraction import extract_maruhan_from_pdf
         return extract_maruhan_from_pdf(pdf_bytes)
+    if source == "jdb":
+        from app.services.maruhan_extraction import extract_jdb_from_pdf
+        return extract_jdb_from_pdf(pdf_bytes)
+    if source == "ldb":
+        from app.services.ldb_extraction import extract_ldb_from_pdf
+        return extract_ldb_from_pdf(pdf_bytes)
 
-    if source == "jbl_scan":
+    if source in ("jbl_scan", "jdb_scan", "ldb_scan"):
+        layout = {"jdb_scan": "jdb", "ldb_scan": "ldb"}.get(source, "maruhan")
+        bank = {"jdb_scan": "JDB", "ldb_scan": "LDB"}.get(source, "JBL")
         from app.services.ocr_extraction import OCRUnavailableError, extract_transactions_via_ocr
         try:
-            rows = extract_transactions_via_ocr(pdf_bytes, layout="maruhan")
+            rows = extract_transactions_via_ocr(pdf_bytes, layout=layout)
         except OCRUnavailableError as exc:
             raise PDFExtractionError(f"OCR is not available in this build: {exc}") from exc
         if not rows:
-            raise PDFExtractionError("OCR found no transactions in the scanned JBL PDF")
+            raise PDFExtractionError(f"OCR found no transactions in the scanned {bank} PDF")
         return rows
 
     if source == "auto":
-        # Try the (fast) digital extractors first; fall back to OCR only if neither
+        # Try the (fast) digital extractors first; fall back to OCR only if none
         # yields text rows. Avoids a separate full-document text-layer scan.
-        for fn in (_try_bcel_digital, _try_jbl_digital):
+        for fn in (_try_bcel_digital, _try_jbl_digital, _try_jdb_digital, _try_ldb_digital):
             rows = fn(pdf_bytes)
             if rows:
                 return rows
@@ -89,6 +99,22 @@ def _try_jbl_digital(pdf_bytes: bytes):
     from app.services.maruhan_extraction import extract_maruhan_from_pdf
     try:
         return extract_maruhan_from_pdf(pdf_bytes)
+    except PDFExtractionError:
+        return None
+
+
+def _try_jdb_digital(pdf_bytes: bytes):
+    from app.services.maruhan_extraction import extract_jdb_from_pdf
+    try:
+        return extract_jdb_from_pdf(pdf_bytes)
+    except PDFExtractionError:
+        return None
+
+
+def _try_ldb_digital(pdf_bytes: bytes):
+    from app.services.ldb_extraction import extract_ldb_from_pdf
+    try:
+        return extract_ldb_from_pdf(pdf_bytes)
     except PDFExtractionError:
         return None
 
@@ -125,11 +151,20 @@ def run_statement_pipeline(
     # (esp. OCR results) even if validation later fails.
     upload_json(f"{prefix}/transactions.json", [t.to_json_dict() for t in transactions])
 
-    return process_transactions(
-        customer_id, statement_id, transactions, uploaded_by,
-        customer_name=customer_name, account_no=account_no,
-        opening_balance=opening_balance, actor_email=actor_email,
-    )
+    # Any failure in validation/report (steps 4-9) must land the statement in 'error'
+    # rather than leaving it stuck on 'processing' forever (the task runs detached, so
+    # an uncaught exception would otherwise just be logged and the UI would hang).
+    try:
+        return process_transactions(
+            customer_id, statement_id, transactions, uploaded_by,
+            customer_name=customer_name, account_no=account_no,
+            opening_balance=opening_balance, actor_email=actor_email,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("processing failed for %s/%s", customer_id, statement_id)
+        statement_service.set_status(customer_id, statement_id, ProcessingStatus.ERROR,
+                                     error_detail=str(exc))
+        return ProcessingStatus.ERROR
 
 
 def process_transactions(

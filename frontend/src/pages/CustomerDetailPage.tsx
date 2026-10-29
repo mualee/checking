@@ -10,9 +10,21 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { StatusBadge } from "@/components/StatusBadge";
-import { PageHeader, Skeleton, EmptyState, ErrorState } from "@/components/ui/misc";
+import {
+  PageHeader,
+  Skeleton,
+  EmptyState,
+  ErrorState,
+} from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
 
 // Bank-branded upload button gradients (white text).
@@ -23,27 +35,43 @@ export const BCEL_BTN_STYLE: CSSProperties = {
 export const JBL_BTN_STYLE: CSSProperties = {
   backgroundImage: "linear-gradient(90deg, #EE1C25, #E31B23)",
 };
+export const JDB_BTN_STYLE: CSSProperties = {
+  backgroundImage: "linear-gradient(90deg, #0A4DA6, #1565C0)",
+};
+export const LDB_BTN_STYLE: CSSProperties = {
+  backgroundImage: "linear-gradient(90deg, #1E7A3D, #27A04E)",
+};
 
 export function CustomerDetailPage({ customerId }: { customerId: string }) {
   const { data: customer, isLoading, error } = useCustomer(customerId);
   const [editing, setEditing] = useState(false);
 
-  if (isLoading) return <Skeleton className="h-64 w-full" />;
+  if (isLoading) return <Skeleton className="w-full h-64" />;
   if (error)
     return (
       <ErrorState
-        message={error instanceof ApiError ? String(error.detail) : "ໂຫຼດຂໍ້ມູນລູກຄ້າບໍ່ສຳເລັດ"}
+        message={
+          error instanceof ApiError
+            ? String(error.detail)
+            : "ໂຫຼດຂໍ້ມູນລູກຄ້າບໍ່ສຳເລັດ"
+        }
       />
     );
   if (!customer) return <EmptyState title="ບໍ່ພົບລູກຄ້າ" />;
 
   return (
     <div>
-      <Link to="/customers" className={buttonVariants({ variant: "ghost", size: "sm" }) + " mb-4"}>
+      <Link
+        to="/customers"
+        className={buttonVariants({ variant: "ghost", size: "sm" }) + " mb-4"}
+      >
         <ArrowLeft className="size-4" />
         ກັບຄືນ
       </Link>
-      <PageHeader title={customer.full_name} description={`ເລກບັນຊີ: ${customer.account_no || "-"}`}>
+      <PageHeader
+        title={customer.full_name}
+        description={`ເລກບັນຊີ: ${customer.account_no || "-"}`}
+      >
         <UploadButtons customerId={customerId} />
       </PageHeader>
 
@@ -51,20 +79,31 @@ export function CustomerDetailPage({ customerId }: { customerId: string }) {
         <Card className="lg:col-span-1">
           <CardHeader className="flex-row items-center justify-between">
             <CardTitle>ຂໍ້ມູນລູກຄ້າ</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => setEditing((v) => !v)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setEditing((v) => !v)}
+            >
               <Pencil className="size-4" />
               {editing ? "ຍົກເລີກ" : "ແກ້ໄຂ"}
             </Button>
           </CardHeader>
           <CardContent>
             {editing ? (
-              <EditForm customerId={customerId} customer={customer} onDone={() => setEditing(false)} />
+              <EditForm
+                customerId={customerId}
+                customer={customer}
+                onDone={() => setEditing(false)}
+              />
             ) : (
               <dl className="space-y-3 text-sm">
                 <Row label="ເລກບັດປະຈຳຕົວ" value={customer.national_id} />
                 <Row label="ເບີໂທ" value={customer.phone} />
                 <Row label="ທີ່ຢູ່" value={customer.address} />
-                <Row label="ສ້າງເມື່ອ" value={formatDate(customer.created_at)} />
+                <Row
+                  label="ສ້າງເມື່ອ"
+                  value={formatDate(customer.created_at)}
+                />
               </dl>
             )}
           </CardContent>
@@ -93,27 +132,51 @@ function UploadButtons({ customerId }: { customerId: string }) {
     <div className="flex flex-wrap gap-2">
       <Button
         onClick={() => go("digital")}
-        className="border-0 text-white hover:opacity-90"
+        className="text-white border-0 hover:opacity-90"
         style={BCEL_BTN_STYLE}
       >
         <Building2 className="size-4" />
-        ອັບໂຫລດ PDF ຈາກ ທະນະຄານ
+        PDF ຈາກ BcelOne
       </Button>
       <Button variant="secondary" onClick={() => go("scan")}>
         <Printer className="size-4" />
-        ອັບໂຫລດ PDF ຈາກ Printer
+        PDF ຈາກ BcelOne (Printer)
       </Button>
       <Button
         onClick={() => go("jbl")}
-        className="border-0 text-white hover:opacity-90"
+        className="text-white border-0 hover:opacity-90"
         style={JBL_BTN_STYLE}
       >
         <Building2 className="size-4" />
-        ອັບໂຫລດ PDF ຈາກ JBL
+        PDF ຈາກ JBL
       </Button>
       <Button variant="secondary" onClick={() => go("jbl_scan")}>
         <Printer className="size-4" />
-        ອັບໂຫລດ PDF ຈາກ JBL (Printer)
+        PDF ຈາກ JBL (Printer)
+      </Button>
+      <Button
+        onClick={() => go("jdb")}
+        className="text-white border-0 hover:opacity-90"
+        style={JDB_BTN_STYLE}
+      >
+        <Building2 className="size-4" />
+        PDF ຈາກ JDB
+      </Button>
+      <Button variant="secondary" onClick={() => go("jdb_scan")}>
+        <Printer className="size-4" />
+        PDF ຈາກ JDB (Printer)
+      </Button>
+      <Button
+        onClick={() => go("ldb")}
+        className="text-white border-0 hover:opacity-90"
+        style={LDB_BTN_STYLE}
+      >
+        <Building2 className="size-4" />
+        PDF ຈາກ LDB
+      </Button>
+      <Button variant="secondary" onClick={() => go("ldb_scan")}>
+        <Printer className="size-4" />
+        PDF ຈາກ LDB (Printer)
       </Button>
     </div>
   );
@@ -121,7 +184,7 @@ function UploadButtons({ customerId }: { customerId: string }) {
 
 function Row({ label, value }: { label: string; value?: string | null }) {
   return (
-    <div className="flex justify-between border-b pb-2">
+    <div className="flex justify-between pb-2 border-b">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="font-medium">{value || "-"}</dd>
     </div>
@@ -134,7 +197,13 @@ function EditForm({
   onDone,
 }: {
   customerId: string;
-  customer: { full_name: string; national_id?: string; phone?: string; address?: string; account_no?: string };
+  customer: {
+    full_name: string;
+    national_id?: string;
+    phone?: string;
+    address?: string;
+    account_no?: string;
+  };
   onDone: () => void;
 }) {
   const update = useUpdateCustomer(customerId);
@@ -171,7 +240,12 @@ function EditForm({
         <Label>ທີ່ຢູ່</Label>
         <Input {...register("address")} />
       </div>
-      <Button type="submit" size="sm" disabled={update.isPending} className="w-full">
+      <Button
+        type="submit"
+        size="sm"
+        disabled={update.isPending}
+        className="w-full"
+      >
         ບັນທຶກ
       </Button>
     </form>
@@ -191,13 +265,16 @@ function StatementsList({ customerId }: { customerId: string }) {
         {isLoading ? (
           <div className="space-y-2">
             {[...Array(3)].map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
+              <Skeleton key={i} className="w-full h-12" />
             ))}
           </div>
         ) : error ? (
           <ErrorState message="ໂຫຼດ Statement ບໍ່ສຳເລັດ" />
         ) : !statements || statements.length === 0 ? (
-          <EmptyState title="ຍັງບໍ່ມີ Statement" description="ອັບໂຫລດ PDF ເພື່ອເລີ່ມກວດສອບ" />
+          <EmptyState
+            title="ຍັງບໍ່ມີ Statement"
+            description="ອັບໂຫລດ PDF ເພື່ອເລີ່ມກວດສອບ"
+          />
         ) : (
           <Table>
             <TableHeader>
@@ -220,7 +297,9 @@ function StatementsList({ customerId }: { customerId: string }) {
                   }
                 >
                   <TableCell>
-                    <span className="font-medium hover:text-primary">{s.file_name}</span>
+                    <span className="font-medium hover:text-primary">
+                      {s.file_name}
+                    </span>
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {formatDate(s.uploaded_at)}

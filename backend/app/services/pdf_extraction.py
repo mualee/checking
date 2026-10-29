@@ -135,10 +135,29 @@ def merge_continuation_rows(raw_rows: list[list[str]]) -> list[TransactionRow]:
     return transactions
 
 
+def _ocr_scanned_pages(pdf_bytes: bytes) -> list[TransactionRow]:
+    """OCR any image-only (no text layer) pages, in page order. Lets a digital BCEL
+    statement with a re-scanned page still be read in full."""
+    from app.services.ocr_extraction import ocr_page
+
+    rows: list[TransactionRow] = []
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        for i, page in enumerate(pdf.pages):
+            if len((page.extract_text() or "").strip()) < 40:
+                rows.extend(ocr_page(page, "bcel", first_page=(i == 0)))
+    return rows
+
+
 def extract_transactions_from_pdf(pdf_bytes: bytes) -> list[TransactionRow]:
     """Top-level entry: PDF bytes -> ordered list of TransactionRow."""
     raw_rows = _extract_raw_rows(pdf_bytes)
     transactions = merge_continuation_rows(raw_rows)
+    # Merge in any scanned pages (typically a re-scanned last page). They're appended
+    # in page order, then the whole set is balance-reconciled to clean OCR misreads.
+    ocr_rows = _ocr_scanned_pages(pdf_bytes)
+    if ocr_rows:
+        from app.services.ocr_extraction import reconcile_amounts
+        transactions = reconcile_amounts(transactions + ocr_rows)
     if not transactions:
         raise PDFExtractionError("no transactions found in PDF")
     return transactions

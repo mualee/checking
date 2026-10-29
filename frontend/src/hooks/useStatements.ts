@@ -3,7 +3,16 @@ import { api } from "@/lib/api";
 import type { Approval, Statement, Transaction } from "@/lib/types";
 
 /** Upload source: bank × medium. */
-export type UploadSource = "auto" | "digital" | "scan" | "jbl" | "jbl_scan";
+export type UploadSource =
+  | "auto"
+  | "digital"
+  | "scan"
+  | "jbl"
+  | "jbl_scan"
+  | "jdb"
+  | "jdb_scan"
+  | "ldb"
+  | "ldb_scan";
 
 export function useStatements(customerId: string) {
   return useQuery({

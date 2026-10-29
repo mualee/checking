@@ -97,6 +97,8 @@ export interface Transaction {
   debit: number;
   credit: number;
   balance: number;
+  /** Fields the OCR read with low confidence (e.g. ["balance"]); empty for digital. */
+  lowConf?: string[];
 }
 
 export type ApprovalDecision = "approved" | "rejected" | "partial";

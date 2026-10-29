@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TransactionRow(BaseModel):
@@ -13,6 +13,9 @@ class TransactionRow(BaseModel):
     debit: Decimal     # Lao: ໜີ້ (paid out)
     credit: Decimal    # Lao: ມີ (received)
     balance: Decimal   # running balance printed on that row (Lao: ຍອດຄົງເຫຼືອ)
+    # Fields the OCR read with low confidence (e.g. ["balance"]); empty for digital
+    # rows. Surfaced in the review UI so the reviewer knows which cells to double-check.
+    low_conf: list[str] = Field(default_factory=list)
 
     def to_json_dict(self) -> dict:
         """Storage/JSON form: amounts as 2dp floats (see utils.money.to_storage_number)."""
@@ -24,6 +27,7 @@ class TransactionRow(BaseModel):
             "debit": to_storage_number(self.debit),
             "credit": to_storage_number(self.credit),
             "balance": to_storage_number(self.balance),
+            "lowConf": self.low_conf,
         }
 
     @classmethod
@@ -35,4 +39,5 @@ class TransactionRow(BaseModel):
             debit=Decimal(str(d.get("debit", 0))),
             credit=Decimal(str(d.get("credit", 0))),
             balance=Decimal(str(d.get("balance", 0))),
+            low_conf=list(d.get("lowConf", [])),
         )

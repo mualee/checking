@@ -79,7 +79,13 @@ def has_text_layer(pdf_bytes: bytes) -> bool:
 
 
 def _render_page(page) -> np.ndarray:
-    """pdfplumber page -> BGR ndarray at RENDER_DPI."""
+    """pdfplumber page -> BGR ndarray at RENDER_DPI.
+
+    Note: deskew + contrast/denoise preprocessing was tried here and measured to
+    *reduce* row recovery on the real scans (the whole-page minAreaRect skew estimate
+    fires on straight pages and the rotation/contrast shifts token detection), so the
+    page is passed through as-rendered — OCR accuracy is highest without it.
+    """
     pil = page.to_image(resolution=RENDER_DPI).original.convert("RGB")
     return np.array(pil)[:, :, ::-1].copy()  # RGB -> BGR for cv2
 
@@ -165,9 +171,10 @@ def _page_transactions(engine, page, layout: str = "bcel", first_page: bool = Tr
 
     date_toks: list[tuple[int, str]] = []
     numdesc_toks: list[tuple[int, str]] = []
-    amount_toks = {"debit": [], "credit": [], "balance": []}
+    amount_toks: dict[str, list[tuple[int, str, float]]] = {"debit": [], "credit": [], "balance": []}
     for item in result:
         box, text = item[0], item[1]
+        score = float(item[2]) if len(item) > 2 else 1.0
         text = text.strip()
         xc = (min(p[0] for p in box) + max(p[0] for p in box)) / 2
         y = int(min(p[1] for p in box))
@@ -180,7 +187,7 @@ def _page_transactions(engine, page, layout: str = "bcel", first_page: bool = Tr
             if _MONEY_RE.match(norm):  # only money-shaped tokens count as amounts
                 for name, (lo, hi) in (("debit", debit_x), ("credit", credit_x), ("balance", balance_x)):
                     if lo <= xc < hi:
-                        amount_toks[name].append((y, norm))
+                        amount_toks[name].append((y, norm, score))
                         break
 
     # Anchor one row per balance token: every transaction prints a running balance,
@@ -190,19 +197,20 @@ def _page_transactions(engine, page, layout: str = "bcel", first_page: bool = Tr
     bal_rows = sorted(amount_toks["balance"])
     if not bal_rows:
         return []
-    row_ys = [y for (y, _t) in bal_rows]
+    row_ys = [y for (y, _t, _s) in bal_rows]
     gaps = sorted(row_ys[i + 1] - row_ys[i] for i in range(len(row_ys) - 1))
     tol = max(10.0, (gaps[len(gaps) // 2] * 0.5) if gaps else 40.0)
 
     valid_dates = sorted((y, t.replace(" ", "")) for (y, t) in date_toks if _looks_like_date(t))
 
-    def nearest(col: str, y: int) -> str:
-        best_t, best_d = "", tol
-        for (ty, t) in amount_toks[col]:
+    def nearest(col: str, y: int) -> tuple[str, float]:
+        best: tuple[str, float] = ("", 1.0)
+        best_d = tol
+        for (ty, t, s) in amount_toks[col]:
             d = abs(ty - y)
             if d <= best_d:
-                best_d, best_t = d, t
-        return best_t
+                best_d, best = d, (t, s)
+        return best
 
     def date_at(y: int) -> str:
         best_t, best_d = "", tol
@@ -223,9 +231,13 @@ def _page_transactions(engine, page, layout: str = "bcel", first_page: bool = Tr
                     parts.append(t)
         return num, " ".join(parts).strip()
 
+    # Scan amount tokens typically score ~0.80-0.88, so flag only the genuinely
+    # uncertain tail (misreads cluster below ~0.70) — a 0.90 cut flags everything.
+    conf_threshold = 0.70
+
     txns: list[TransactionRow] = []
     last_date = ""
-    for idx, (y0, btext) in enumerate(bal_rows):
+    for idx, (y0, btext, bscore) in enumerate(bal_rows):
         y1 = row_ys[idx + 1] if idx + 1 < len(row_ys) else bottom
         date = date_at(y0)
         if date:
@@ -233,9 +245,11 @@ def _page_transactions(engine, page, layout: str = "bcel", first_page: bool = Tr
         else:
             date = last_date
         num, desc = num_desc(y0, y1)
+        dtext, dscore = nearest("debit", y0)
+        ctext, cscore = nearest("credit", y0)
         try:
-            debit = parse_lao_amount(nearest("debit", y0), default_zero=True)
-            credit = parse_lao_amount(nearest("credit", y0), default_zero=True)
+            debit = parse_lao_amount(dtext, default_zero=True)
+            credit = parse_lao_amount(ctext, default_zero=True)
             balance = parse_lao_amount(btext, default_zero=False)
         except AmountParseError:
             debit = credit = balance = 0
@@ -245,9 +259,14 @@ def _page_transactions(engine, page, layout: str = "bcel", first_page: bool = Tr
         # transaction always carries a bill number).
         if (not date and debit == 0 and credit == 0) or (not num and not desc):
             continue
+        low = [
+            field for field, (tok, sc) in (
+                ("balance", (btext, bscore)), ("debit", (dtext, dscore)), ("credit", (ctext, cscore)),
+            ) if tok and sc < conf_threshold
+        ]
         txns.append(
             TransactionRow(date=date, txn_number=num, description=desc,
-                           debit=debit, credit=credit, balance=balance)
+                           debit=debit, credit=credit, balance=balance, low_conf=low)
         )
     return txns
 
@@ -326,6 +345,10 @@ def _reconcile_amounts(rows: list[TransactionRow]) -> list[TransactionRow]:
     def consistent(prev_bal: Decimal, r: TransactionRow) -> bool:
         return abs((r.balance - prev_bal) - (r.credit - r.debit)) <= tol
 
+    def cleared(lc: list[str], *fields: str) -> list[str]:
+        # A field we just corrected is no longer "uncertain" — drop its low-conf flag.
+        return [f for f in lc if f not in fields]
+
     for i in range(1, n):
         prev_bal = rows[i - 1].balance
         cur = rows[i]
@@ -337,17 +360,21 @@ def _reconcile_amounts(rows: list[TransactionRow]) -> list[TransactionRow]:
         if i + 1 < n:
             trust_balance = consistent(cur.balance, rows[i + 1])
         if not trust_balance:
-            # The balance itself looks misread. If the OCR'd debit/credit instead
-            # reconcile the next row, derive the balance from them.
+            # The balance is misread but the OCR'd debit/credit are right: derive the
+            # balance from them only if that reconciles the next row (so we never
+            # *guess* a value that merely papers over a genuine error or a missing row
+            # — those are left for the human review step instead).
             if i + 1 < n:
                 cand = prev_bal + (cur.credit - cur.debit)
                 if consistent(cand, rows[i + 1]):
-                    rows[i] = cur.model_copy(update={"balance": cand})
+                    rows[i] = cur.model_copy(update={"balance": cand,
+                                                     "low_conf": cleared(cur.low_conf, "balance")})
             continue
         delta = cur.balance - prev_bal
         credit = delta if delta >= 0 else Decimal("0")
         debit = -delta if delta < 0 else Decimal("0")
         if credit == cur.credit and debit == cur.debit:
             continue
-        rows[i] = cur.model_copy(update={"debit": debit, "credit": credit})
+        rows[i] = cur.model_copy(update={"debit": debit, "credit": credit,
+                                         "low_conf": cleared(cur.low_conf, "debit", "credit")})
     return rows

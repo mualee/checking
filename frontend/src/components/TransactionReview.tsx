@@ -15,6 +15,7 @@ type Row = {
   debit: string;
   credit: string;
   balance: string;
+  lowConf: string[]; // OCR-uncertain fields to flag for the reviewer
 };
 
 const num = (s: string) => {
@@ -30,6 +31,7 @@ function toRows(txns: Transaction[]): Row[] {
     debit: String(t.debit ?? 0),
     credit: String(t.credit ?? 0),
     balance: String(t.balance ?? 0),
+    lowConf: t.lowConf ?? [],
   }));
 }
 
@@ -76,7 +78,9 @@ export function TransactionReview({
 
   function edit(i: number, field: keyof Row, value: string) {
     withRows((rs) => {
-      rs[i] = { ...rs[i], [field]: value };
+      // Editing a cell clears its OCR-uncertainty flag (the reviewer vouched for it).
+      const lowConf = rs[i].lowConf.filter((f) => f !== field);
+      rs[i] = { ...rs[i], [field]: value, lowConf };
       return rs;
     });
   }
@@ -93,6 +97,7 @@ export function TransactionReview({
         debit: "0",
         credit: "0",
         balance: prev?.balance ?? "0",
+        lowConf: [],
       });
       return rs;
     });
@@ -179,21 +184,27 @@ export function TransactionReview({
                         className="w-full min-w-[7rem] rounded border border-input bg-background px-2 py-1 text-sm"
                       />
                     </TableCell>
-                    {(["debit", "credit", "balance"] as const).map((f) => (
-                      <TableCell key={f} className="text-right">
-                        <input
-                          value={r[f]}
-                          inputMode="decimal"
-                          onChange={(e) => edit(i, f, e.target.value)}
-                          className={
-                            "w-32 rounded border bg-background px-2 py-1 text-right text-sm " +
-                            (bad && f === "balance"
-                              ? "border-destructive text-destructive"
-                              : "border-input")
-                          }
-                        />
-                      </TableCell>
-                    ))}
+                    {(["debit", "credit", "balance"] as const).map((f) => {
+                      const low = r.lowConf.includes(f);
+                      return (
+                        <TableCell key={f} className="text-right">
+                          <input
+                            value={r[f]}
+                            inputMode="decimal"
+                            onChange={(e) => edit(i, f, e.target.value)}
+                            title={low ? "OCR ອ່ານ cell ນີ້ດ້ວຍຄວາມໝັ້ນໃຈຕ່ຳ — ກວດຄືນ" : undefined}
+                            className={
+                              "w-32 rounded border bg-background px-2 py-1 text-right text-sm " +
+                              (bad && f === "balance"
+                                ? "border-destructive text-destructive"
+                                : low
+                                  ? "border-amber-500 bg-amber-50 dark:bg-amber-950/30"
+                                  : "border-input")
+                            }
+                          />
+                        </TableCell>
+                      );
+                    })}
                     <TableCell>
                       <div className="flex justify-center gap-1">
                         <Button

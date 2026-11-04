@@ -1,13 +1,16 @@
 """Digital-PDF extraction for LDB (Lao Development Bank) statements.
 
 LDB statements print no table borders (unlike BCEL/JBL/JDB), so there are no
-vertical rules to detect — columns are located from the printed word x-positions
-instead. Layout (7 columns):
+vertical rules to detect — and the column x-positions shift between statements
+(account-number width, template version). So geometry is detected per file:
 
-    Booking Date | Reference | Description | Value Date | Debit | Credit | Closing Balance
+  * the left-aligned text columns (Booking Date | Reference | Description) are
+    bounded by the x-positions of the "Reference"/"Description"/"Value" header words;
+  * the right-aligned amount columns (Debit | Credit | Closing Balance) are found by
+    clustering the right edges of the money tokens into three groups.
 
-Dates read as "DD MMM YY" (e.g. "02 APR 26"). Amount columns are right-aligned, so
-they're bucketed by each number's right edge; text columns by centre.
+Layout: Booking Date | Reference | Description | Value Date | Debit | Credit |
+Closing Balance, with "DD MMM YY" dates (e.g. 02 MAY 26).
 """
 from __future__ import annotations
 
@@ -20,23 +23,62 @@ from app.models.transaction import TransactionRow
 from app.services.pdf_extraction import PDFExtractionError
 from app.utils.money import AmountParseError, parse_lao_amount
 
-_DATE_RE = re.compile(r"^\d{1,2} [A-Z]{3} \d{2}$")  # 02 APR 26
+_DATE_RE = re.compile(r"^\d{1,2} [A-Z]{3} \d{2}$")  # 02 MAY 26
 _MONEY_RE = re.compile(r"^\d{1,3}(?:,\d{3})*\.\d{2}$")
 
-# Column x-ranges as a fraction of page width. Text columns use the word centre;
-# amount columns use the number's right edge (right-aligned figures).
-_DATE_X = (0.00, 0.106)     # Booking Date (leftmost)
-_REF_X = (0.106, 0.268)     # Reference
-_DESC_X = (0.268, 0.574)    # Description
-# Amount right-edge ranges: Debit, Credit, Closing Balance (Value Date sits between
-# desc and debit and is ignored). Figures are right-aligned and cluster at ~0.72 /
-# ~0.82 / ~0.93 of the width; the boundaries sit in the gaps between those clusters.
-_DEBIT_X = (0.640, 0.780)
-_CREDIT_X = (0.780, 0.880)
-_BALANCE_X = (0.880, 1.01)
+
+class _Geometry:
+    """Per-file column boundaries as fractions of page width."""
+
+    def __init__(self, ref: float, desc: float, value: float, amt_b1: float, amt_b2: float):
+        self.ref = ref          # Reference column starts here (= Date column ends)
+        self.desc = desc        # Description starts
+        self.value = value      # Value Date starts (= Description ends)
+        self.amt_b1 = amt_b1    # Debit | Credit split (by money right-edge)
+        self.amt_b2 = amt_b2    # Credit | Balance split
 
 
-def _page_transactions(page) -> list[TransactionRow]:
+def _amount_bounds(x1s: list[float]) -> tuple[float, float] | None:
+    """Split money right-edges into Debit/Credit/Balance by the two widest gaps."""
+    xs = sorted(x1s)
+    if len(xs) < 6:
+        return None
+    gaps = sorted(((xs[i + 1] - xs[i], i) for i in range(len(xs) - 1)), reverse=True)
+    top = sorted(i for _g, i in gaps[:2])
+    if len(top) < 2:
+        return None
+    b1 = (xs[top[0]] + xs[top[0] + 1]) / 2
+    b2 = (xs[top[1]] + xs[top[1] + 1]) / 2
+    return b1, b2
+
+
+def _detect_geometry(pdf) -> _Geometry:
+    page = pdf.pages[0]
+    w = page.width
+    words = page.extract_words()
+    hx: dict[str, float] = {}
+    for word in words:
+        if word["text"] in ("Reference", "Description", "Value") and word["text"] not in hx:
+            hx[word["text"]] = word["x0"] / w
+    ref = hx.get("Reference", 0.11)
+    desc = hx.get("Description", 0.29)
+    value = hx.get("Value", 0.57)
+    # Amount right-edges from the first few pages (enough rows for 3 clusters).
+    x1s: list[float] = []
+    for p in pdf.pages[:3]:
+        pw = p.width
+        for word in p.extract_words():
+            if _MONEY_RE.match(word["text"]):
+                x1s.append(word["x1"] / pw)
+    bounds = _amount_bounds(x1s)
+    if bounds:
+        amt_b1, amt_b2 = bounds
+    else:  # fallback: proportional to the amount headers
+        amt_b1, amt_b2 = 0.72, 0.88
+    return _Geometry(ref, desc, value, amt_b1, amt_b2)
+
+
+def _page_transactions(page, geom: _Geometry) -> list[TransactionRow]:
     words = page.extract_words()
     if not words:
         return []
@@ -46,23 +88,19 @@ def _page_transactions(page) -> list[TransactionRow]:
     ref_words: list[tuple[float, str]] = []
     desc_words: list[tuple[float, str]] = []
     amounts: dict[str, list[tuple[float, str]]] = {"debit": [], "credit": [], "balance": []}
-    for w in words:
-        xc = ((w["x0"] + w["x1"]) / 2) / w_page
-        x1 = w["x1"] / w_page
-        y = w["top"]
-        if _DATE_X[0] <= xc < _DATE_X[1]:
-            date_lines.setdefault(round(y), []).append((w["x0"], w["text"]))
-        elif _REF_X[0] <= xc < _REF_X[1]:
-            ref_words.append((y, w["text"]))
-        elif _DESC_X[0] <= xc < _DESC_X[1]:
-            desc_words.append((y, w["text"]))
-        elif _MONEY_RE.match(w["text"]):
-            for name, (lo, hi) in (
-                ("debit", _DEBIT_X), ("credit", _CREDIT_X), ("balance", _BALANCE_X),
-            ):
-                if lo <= x1 < hi:
-                    amounts[name].append((y, w["text"]))
-                    break
+    for word in words:
+        xc = ((word["x0"] + word["x1"]) / 2) / w_page
+        x1 = word["x1"] / w_page
+        y = word["top"]
+        if xc < geom.ref:
+            date_lines.setdefault(round(y), []).append((word["x0"], word["text"]))
+        elif xc < geom.desc:
+            ref_words.append((y, word["text"]))
+        elif xc < geom.value:
+            desc_words.append((y, word["text"]))
+        elif _MONEY_RE.match(word["text"]):
+            name = "debit" if x1 < geom.amt_b1 else "credit" if x1 < geom.amt_b2 else "balance"
+            amounts[name].append((y, word["text"]))
 
     dates: list[tuple[float, str]] = []
     for y, toks in date_lines.items():
@@ -125,9 +163,10 @@ def extract_ldb_from_pdf(pdf_bytes: bytes) -> list[TransactionRow]:
     used_ocr = False
     try:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            geom = _detect_geometry(pdf)
             for i, page in enumerate(pdf.pages):
                 if _page_has_text(page):
-                    out.extend(_page_transactions(page))
+                    out.extend(_page_transactions(page, geom))
                 else:
                     from app.services.ocr_extraction import ocr_page
                     out.extend(ocr_page(page, "ldb", first_page=(i == 0)))

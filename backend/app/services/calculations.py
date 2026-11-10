@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from app.core.constants import TOTAL_LABEL
 from app.models.transaction import TransactionRow
-from app.utils.lao_dates import month_key, month_sort_key
+from app.utils.lao_dates import month_key_or_none, month_sort_key
 
 
 # --------------------------------------------------------------------------- #
@@ -93,7 +93,10 @@ def _group_by_month(transactions: list[TransactionRow]) -> "OrderedDict[str, lis
     """
     groups: dict[str, list[TransactionRow]] = {}
     for row in transactions:
-        groups.setdefault(month_key(row.date), []).append(row)
+        mk = month_key_or_none(row.date)
+        if mk is None:
+            continue  # a row whose date couldn't be parsed is left out of the summary
+        groups.setdefault(mk, []).append(row)
     ordered = OrderedDict()
     for mk in sorted(groups, key=month_sort_key):
         ordered[mk] = groups[mk]
@@ -240,8 +243,9 @@ def build_table3(
         lambda: defaultdict(list)
     )
     for r in transactions:
-        if r.debit > 0:
-            by_amount[r.debit][month_key(r.date)].append(r)
+        mk = month_key_or_none(r.date)
+        if r.debit > 0 and mk is not None:
+            by_amount[r.debit][mk].append(r)
 
     groups: list[Table3Group] = []
     for amount, months in by_amount.items():

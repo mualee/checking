@@ -58,6 +58,14 @@ def month_key(cell: str) -> str:
     return f"{dt.month:02d}/{dt.year}"
 
 
+def month_key_or_none(cell: str) -> str | None:
+    """Like month_key but returns None on an unparseable date instead of raising, so a
+    single bad row is dropped from the monthly summary rather than failing the whole
+    report."""
+    dt = parse_statement_date(cell)
+    return f"{dt.month:02d}/{dt.year}" if dt else None
+
+
 def month_sort_key(mk: str) -> tuple[int, int]:
     """'MM/YYYY' -> (year, month) for correct chronological ordering across years."""
     mm, yyyy = mk.split("/")
